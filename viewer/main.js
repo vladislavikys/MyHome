@@ -129,8 +129,9 @@ function openingFill(o, t) {
     const leafW = o.width - 2 * f;
     const leaf = box(leafW, o.height - f, 0.04, doorMat);
     const hinge = new THREE.Group();
-    hinge.position.set(-o.width / 2 + f, 0, d / 2);
-    hinge.rotation.y = -THREE.MathUtils.degToRad(o.open ?? 80);
+    const sw = o.flip ? -1 : 1;   // flip: открывается на другую сторону стены
+    hinge.position.set(-o.width / 2 + f, 0, sw * d / 2);
+    hinge.rotation.y = -sw * THREE.MathUtils.degToRad(o.open ?? 80);
     leaf.position.set(leafW / 2, (o.height - f) / 2, 0.02);
     hinge.add(leaf);
     g.add(hinge);

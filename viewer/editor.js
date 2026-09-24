@@ -554,8 +554,9 @@ export function createEditor(root, { onChange, onFloor }) {
       if (o.type === 'door') {
         // дуга открывания
         const r = o.width;
-        const e = [a[0] + g.n[0] * r, a[1] + g.n[1] * r];
-        out.push(`<path class="g-swing" d="M${a[0]} ${a[1]}L${e[0]} ${e[1]}A${r} ${r} 0 0 ${1} ${b[0]} ${b[1]}" stroke-width="${1.2 * k}"/>`);
+        const sw = o.flip ? -1 : 1;
+        const e = [a[0] + g.n[0] * r * sw, a[1] + g.n[1] * r * sw];
+        out.push(`<path class="g-swing" d="M${a[0]} ${a[1]}L${e[0]} ${e[1]}A${r} ${r} 0 0 ${o.flip ? 0 : 1} ${b[0]} ${b[1]}" stroke-width="${1.2 * k}"/>`);
       }
     }
 
@@ -666,6 +667,7 @@ export function createEditor(root, { onChange, onFloor }) {
           ${slider('ed-w', 'Ширина, м', o.width, 0.4, o.type === 'window' ? 3 : 2.4)}
           ${slider('ed-h', 'Высота, м', o.height, 0.4, 2.7)}
           ${o.type === 'window' ? slider('ed-sill', 'Низ окна от пола, м', o.sill ?? 0, 0, 1.8) : ''}
+          ${o.type === 'door' ? '<button type="button" id="ed-flip">Сменить сторону открывания</button>' : ''}
         </div>`;
     } else if (sel.kind === 'skylight') {
       const s = sel.win;
@@ -721,6 +723,11 @@ export function createEditor(root, { onChange, onFloor }) {
       const w = walls().find(x => x.id === o.wall);
       const clamp = () => { const L = wallGeom(w).len; o.width = Math.min(o.width, r2(L)); o.offset = r2(Math.max(0, Math.min(L - o.width, o.offset))); };
       on('ed-type', el => { o.type = el.value; if (o.type !== 'window') o.sill = 0; });
+      props.querySelector('#ed-flip')?.addEventListener('click', () => {
+        begin();
+        if (o.flip) delete o.flip; else o.flip = true;
+        commit();
+      });
       on('ed-w', el => {
         const v = parseFloat(el.value);
         if (!(v > 0.2)) return;
