@@ -661,33 +661,43 @@ function panelSolid(s, elevation) {
 // Точка пути [x, y] или [x, y, h] — h: отметка низа перил над полом этажа (для наклонных перил лестницы).
 function railing(r, elevation) {
   const g = new THREE.Group();
-  const mat = material(r.color ?? '#5a3822', null, { kind: 'wood-dark' });
+  // гладкое дерево, как у ступеней (texture — по желанию)
+  const mat = material(r.color ?? '#6b4630', null, { kind: r.texture ?? null, roughness: 0.45 });
   const H = r.height ?? 0.95, step = r.baluster ?? 0.12;
+  // точка пути: [x, y, h = 0, drop = 0] — h: низ перил над полом этажа, drop: насколько столб уходит ниже (до площадки)
   const pts = r.path.map(([x, y, h = 0]) => new THREE.Vector3(x, elevation + h, y));
-  const X = new THREE.Vector3(1, 0, 0);
+  const drops = r.path.map(p => p[3] ?? 0);
+  // брус от a до b без перекоса: ширина — горизонтально, высота — в вертикальной плоскости пути
   const bar = (a, b, w, d) => {
-    const dir = b.clone().sub(a);
-    const len = dir.length();
-    const m = box(len, w, d, mat);
+    const X = b.clone().sub(a).normalize();
+    const Z = new THREE.Vector3().crossVectors(X, new THREE.Vector3(0, 1, 0));
+    if (Z.lengthSq() < 1e-6) Z.set(0, 0, 1);
+    Z.normalize();
+    const Y = new THREE.Vector3().crossVectors(Z, X);
+    const m = box(a.distanceTo(b), w, d, mat);
     m.position.copy(a).add(b).multiplyScalar(0.5);
-    m.quaternion.setFromUnitVectors(X, dir.normalize());
+    m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
     return m;
   };
+  const vbox = (x, y0, y1, z, s) => {
+    const m = box(s, y1 - y0, s, mat);
+    m.position.set(x, (y0 + y1) / 2, z);
+    m.userData.collide = true;
+    g.add(m);
+  };
+  const up = new THREE.Vector3(0, H, 0);
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    const up = new THREE.Vector3(0, H, 0);
-    g.add(bar(a.clone().add(up), b.clone().add(up), 0.06, 0.07));   // поручень
+    // поручень чуть заходит на столбы
+    g.add(bar(a.clone().add(up), b.clone().add(up), 0.05, 0.07));
     const flat = Math.hypot(b.x - a.x, b.z - a.z);
     const n = Math.max(1, Math.round(flat / step));
-    for (let k = 0; k <= n; k++) {
-      const t = k / n, post = k === 0 || k === n;
-      const p = a.clone().lerp(b, t);
-      const m = box(post ? 0.08 : 0.03, H, post ? 0.08 : 0.03, mat);
-      m.position.set(p.x, p.y + H / 2, p.z);
-      m.userData.collide = true;
-      g.add(m);
+    for (let k = 1; k < n; k++) {
+      const p = a.clone().lerp(b, k / n);
+      vbox(p.x, p.y, p.y + H - 0.025, p.z, 0.035);
     }
   }
+  pts.forEach((p, i) => vbox(p.x, p.y - drops[i], p.y + H + 0.06, p.z, 0.08));   // столбы на изломах и концах
   return g;
 }
 
