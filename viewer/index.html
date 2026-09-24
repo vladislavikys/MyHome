@@ -143,6 +143,18 @@
       .walk-hint-touch { display: inline; }
     }
 
+    /* ---------- фото ---------- */
+    #photobar { display: none; }
+    body.photo #panel, body.photo #labels-layer { visibility: hidden; }
+    body.photo #photobar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+      position: absolute; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+      width: max-content; max-width: calc(100% - 24px); z-index: 2;
+      background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line);
+      border-radius: 10px; padding: 8px 12px;
+    }
+    #photo-status { font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
     /* ---------- экскурсия ---------- */
     #tourbar { display: none; }
     body.touring #panel { display: none; }
@@ -249,8 +261,11 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.15/build/index.module.js",
+      "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.24/build/index.module.js"
     }
   }
   </script>
@@ -265,9 +280,11 @@
         <label>Этажи: <select id="floors"></select></label>
       </div>
       <div class="row" id="variants"></div>
+      <div class="row"><label>Качество: <select id="quality"><option value="high">Высокое</option><option value="fast">Быстрое</option></select></label></div>
       <div class="row">
         <button type="button" id="top">Вид сверху</button>
         <button type="button" id="reset">3D вид</button>
+        <button type="button" id="photo" title="Фотореалистичный кадр с текущего ракурса">Фото</button>
         <button type="button" id="tour">Экскурсия</button>
         <button type="button" id="walk">Прогулка</button>
         <button type="button" id="edit" aria-pressed="false">Редактировать план</button>
@@ -279,6 +296,11 @@
       <span class="walk-hint walk-hint-keys">WASD — идти · тянуть мышью — смотреть · Shift — быстрее · Space / C — вверх / вниз в полёте · Esc — выход</span>
       <span class="walk-hint walk-hint-touch">Джойстик — идти · свайп по экрану — смотреть</span>
       <button type="button" id="exit-walk">Выйти</button>
+    </div>
+    <div id="photobar" role="status">
+      <span id="photo-status"></span>
+      <button type="button" id="photo-save">Сохранить картинку</button>
+      <button type="button" id="photo-close">Закрыть</button>
     </div>
     <div id="tourbar">
       <button type="button" id="stop-tour">Остановить экскурсию</button>

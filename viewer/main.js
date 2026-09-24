@@ -4,62 +4,107 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { computeRooms } from './rooms.js';
 import { stairSteps } from './stairs.js';
 import { createEditor } from './editor.js';
-import { openStore, downloadJson } from './store.js';
+import { openStore, downloadJson, downloadFile } from './store.js';
 import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
 import { applyVariant, tourPoints } from './variants.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { textureSet, skyTexture } from './looks.js';
+import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
+import { createPhoto } from './photo.js';
 
 // Координаты плана [x, y] (метры) переводятся в 3D как (x, высота, y).
 // Высоты — абсолютные отметки, 0.000 = чистый пол 1-го этажа.
 
 const app = document.getElementById('app');
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.localClippingEnabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
 app.appendChild(renderer.domElement);
 
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.domElement.style.position = 'absolute';
 labelRenderer.domElement.style.top = '0';
 labelRenderer.domElement.style.pointerEvents = 'none';
+labelRenderer.domElement.id = 'labels-layer';
 app.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#e9eef3');
 
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI / 2 - 0.02;
 
-scene.add(new THREE.HemisphereLight('#ffffff', '#7d7466', 1.3));
-const sun = new THREE.DirectionalLight('#ffffff', 1.7);
-sun.position.set(-12, 25, 20);
+// Постобработка: объёмное затенение в углах (GTAO) и сглаживание (SMAA).
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const gtao = new GTAOPass(scene, camera, 1, 1);
+gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.1, samples: 16 });
+gtao.blendIntensity = 0.9;
+composer.addPass(gtao);
+composer.addPass(new OutputPass());
+const smaa = new SMAAPass(1, 1);
+composer.addPass(smaa);
+const coarse = matchMedia('(pointer: coarse)').matches;
+let highQuality = !coarse;
+
+// Солнце и небо: небо — HDR-карта окружения (рассеянный свет и отражения), солнце — направленный свет с тенями.
+const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize();
+const sky = skyTexture(SUN_DIR);
+scene.background = sky;
+scene.environment = sky;
+scene.environmentIntensity = 0.9;
+const sun = new THREE.DirectionalLight('#fff1dc', 3.2);
+sun.position.copy(SUN_DIR).multiplyScalar(40).add(new THREE.Vector3(8, 0, 4));
+sun.target.position.set(8, 0, 4);
+scene.add(sun.target);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.bias = -0.0005;
-Object.assign(sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25 });
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.bias = -0.0002;
+sun.shadow.normalBias = 0.02;
+sun.shadow.radius = 3;
+Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 90 });
 scene.add(sun);
 
+const grassTex = textureSet('grass');
+const groundGeo = new THREE.PlaneGeometry(300, 300);
+const guv = groundGeo.attributes.uv;
+for (let i = 0; i < guv.count; i++) guv.setXY(i, guv.getX(i) * 300, guv.getY(i) * 300);
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(300, 300),
-  new THREE.MeshStandardMaterial({ color: '#9fb989' })
+  groundGeo,
+  new THREE.MeshStandardMaterial({ color: '#8fae6e', map: grassTex.map, normalMap: grassTex.normalMap, roughness: 0.95 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 ground.userData.walkable = true;
 scene.add(ground);
 
+// PBR-материал с процедурной фактурой: kind — вид фактуры (looks.js), цвет её тонирует.
+function pbr(color, kind, extra = {}) {
+  const t = kind ? textureSet(kind) : null;
+  return new THREE.MeshStandardMaterial({
+    color, ...(t ? { map: t.map, normalMap: t.normalMap, ...t.mat } : {}), ...extra,
+  });
+}
+
 const glassMat = new THREE.MeshStandardMaterial({
-  color: '#9cc8e6', transparent: true, opacity: 0.35, roughness: 0.1,
-  side: THREE.DoubleSide, depthWrite: false,
+  color: '#c8dbe6', transparent: true, opacity: 0.18, roughness: 0.03, metalness: 0.1,
+  envMapIntensity: 2.2, side: THREE.DoubleSide, depthWrite: false,
 });
-const frameMat = new THREE.MeshStandardMaterial({ color: '#ffffff' });
+const frameMat = pbr('#ffffff', 'wood-dark');
 let soffitColor = null; // обшивка свесов снизу
-const doorMat = new THREE.MeshStandardMaterial({ color: '#6d4a2f' });
-const skylightMat = new THREE.MeshStandardMaterial({ color: '#2f4454', roughness: 0.2, side: THREE.DoubleSide });
+const doorMat = pbr('#7a5234', 'wood-dark');
+const skylightMat = new THREE.MeshStandardMaterial({ color: '#1f2c36', roughness: 0.04, metalness: 0.3, envMapIntensity: 2, side: THREE.DoubleSide });
 
 // Плоскости срезки: стены группы обрезаются снизу скатами крыши, так получаются фронтоны.
 let clipPlanes = {};
@@ -71,13 +116,18 @@ function resetMaterials() {
   clipPlanes = {};
 }
 
+// opts.kind — фактура (plaster, wood-dark, floor, tiles, stone, roof, soffit, deck, foliage).
 function material(color, clip, opts = {}) {
   const key = `${color}|${clip ?? ''}|${JSON.stringify(opts)}`;
   if (!matCache.has(key)) {
     const planes = clip ? clipPlanes[clip] ?? [] : [];
+    const { kind, ...rest } = opts;
+    const t = kind ? textureSet(kind) : null;
     matCache.set(key, new THREE.MeshStandardMaterial({
       color, clippingPlanes: planes, clipShadows: true,
-      side: planes.length ? THREE.DoubleSide : THREE.FrontSide, ...opts,
+      side: planes.length ? THREE.DoubleSide : THREE.FrontSide,
+      ...(t ? { map: t.map, normalMap: t.normalMap, ...t.mat } : {}),
+      ...rest,
     }));
   }
   return matCache.get(key);
@@ -130,6 +180,17 @@ function openingFill(o, t) {
     // закрытая дверь — "open": 0
     const leafW = o.width - 2 * f;
     const leaf = box(leafW, o.height - f, 0.04, doorMat);
+    if (o.slide) {
+      // раздвижная: полотно вдоль стены на её стороне (flip — другая сторона), сдвинуто к началу проёма
+      const sw = o.flip ? -1 : 1, sh = o.hingeEnd ? -1 : 1;
+      const z = sw * (t / 2 + 0.035);
+      leaf.position.set(-sh * leafW * (o.open ?? 0.8), (o.height - f) / 2, z);
+      g.add(leaf);
+      const rail = box(o.width * 2, 0.05, 0.05, frameMat);   // направляющая над проёмом
+      rail.position.set(-sh * o.width * 0.5, o.height + 0.03, z);
+      g.add(rail);
+      return g;
+    }
     const hinge = new THREE.Group();
     const sw = o.flip ? -1 : 1;       // flip: открывается на другую сторону стены
     const sh = o.hingeEnd ? -1 : 1;   // hingeEnd: петли у конца проёма, а не у начала
@@ -151,7 +212,7 @@ function buildWall(wall, openings, floor, defaults) {
   const H = wall.height ?? floor.height;
   const clip = wall.clip === undefined ? defaults.clip : wall.clip;
   const isGlass = wall.material === 'glass';
-  const mat = isGlass ? glass(clip) : material(wall.color ?? defaults.wallColor, clip);
+  const mat = isGlass ? glass(clip) : material(wall.color ?? defaults.wallColor, clip, { kind: 'plaster' });
 
   const g = new THREE.Group();
   g.position.set(x1, floor.elevation, y1);
@@ -215,7 +276,7 @@ function fachwerk(wall, openings, floor, fz) {
 
   const W = fz.width ?? 0.14, D = 0.035;
   const z = side * (t / 2 + D / 2);
-  const mat = material(fz.timber ?? '#5a3822', 'main');
+  const mat = material(fz.timber ?? '#5a3822', 'main', { kind: 'wood-dark' });
   const H = wall.height ?? floor.height;
   const bands = (fz.bands?.[fz.floorIdx] ?? [0.07, 0.85, 2.45, 2.93]).filter(b => b < H);
   const g = new THREE.Group();
@@ -300,7 +361,7 @@ function roomLabel(text, x, y, h) {
 }
 
 // Пол помещения из горизонтальных полос ячеек, найденных rooms.js.
-function regionMesh(runs, h, color) {
+function regionMesh(runs, h, color, kind = 'floor') {
   const pos = [];
   for (const [a, b, y] of runs) {
     const y1 = y + 0.05;
@@ -309,22 +370,26 @@ function regionMesh(runs, h, color) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.computeVertexNormals();
-  const m = mesh(geo, material(color, null, { side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }), false);
+  const m = mesh(geo, material(color, null, { kind, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }), false);
   m.userData.walkable = true;
   return m;
 }
+
+// Покрытие пола по назначению помещения (или room.texture).
+const WET = /санузел|котельн|тамбур|прихож|ванн|туалет/i;
+const roomFloorKind = room => room.texture ?? (WET.test(room.name) ? 'tiles' : 'floor');
 
 function buildFloor(floor, defaults) {
   const g = new THREE.Group();
   const slabT = floor.slab ?? 0.2;
   if (floor.outline) {
-    g.add(slab(floor.outline, floor.holes, floor.elevation, slabT, material(floor.slabColor ?? '#9a9a9a')));
+    g.add(slab(floor.outline, floor.holes, floor.elevation, slabT, material(floor.slabColor ?? '#9a9a9a', null, { kind: floor.slabTexture ?? (floor.elevation === 0 ? 'stone' : 'plaster') })));
   }
 
   const { regions, rooms } = computeRooms(floor);
   for (const reg of regions) {
     const room = floor.rooms[reg.rooms[0]];
-    g.add(regionMesh(reg.runs, floor.elevation + 0.005, room.color ?? '#d9d4c7'));
+    g.add(regionMesh(reg.runs, floor.elevation + 0.005, room.color ?? '#d9d4c7', roomFloorKind(room)));
   }
   (floor.rooms ?? []).forEach((room, i) => {
     if (!room.at) return;
@@ -365,7 +430,7 @@ function prism(s) {
     [bx0, b.h, by0], [bx1, b.h, by0], [bx1, b.h, by1], [bx0, b.h, by1],
     [tx0, t.h, ty0], [tx1, t.h, ty0], [tx1, t.h, ty1], [tx0, t.h, ty1],
   ]);
-  const m = mesh(geo, material(s.color ?? '#999999', s.clip, { side: THREE.DoubleSide }));
+  const m = mesh(geo, material(s.color ?? '#999999', s.clip, { kind: s.texture, side: THREE.DoubleSide }));
   m.userData.collide = true;
   m.userData.walkable = true;
   return m;
@@ -374,7 +439,7 @@ function prism(s) {
 // Лестница: каждая ступень — проступь-плита по своему многоугольнику (марши и забежные).
 function stairs(s) {
   const g = new THREE.Group();
-  const mat = material(s.color ?? '#b08a5a', null, { side: THREE.DoubleSide });
+  const mat = material(s.color ?? '#b08a5a', null, { kind: 'floor', side: THREE.DoubleSide });
   const t = s.thickness ?? 0.05;
   for (const { poly, lead, top } of stairSteps(s)) {
     const m = slab(poly, null, top, t, mat);
@@ -400,7 +465,7 @@ function stairs(s) {
 // Точка пути [x, y] или [x, y, h] — h: отметка низа перил над полом этажа (для наклонных перил лестницы).
 function railing(r, elevation) {
   const g = new THREE.Group();
-  const mat = material(r.color ?? '#5a3822');
+  const mat = material(r.color ?? '#5a3822', null, { kind: 'wood-dark' });
   const H = r.height ?? 0.95, step = r.baluster ?? 0.12;
   const pts = r.path.map(([x, y, h = 0]) => new THREE.Vector3(x, elevation + h, y));
   const X = new THREE.Vector3(1, 0, 0);
@@ -440,16 +505,27 @@ function roofPanel(p) {
   const isGlass = p.material === 'glass';
   const mat = isGlass
     ? glassMat
-    : material(p.color ?? '#5b3a29', null, { side: THREE.DoubleSide, roughness: 0.6, metalness: 0.2 });
+    : material(p.color ?? '#5b3a29', null, { kind: 'roof', side: THREE.DoubleSide });
+  // UV по плоскости ската: u — вдоль конька (x), v — вдоль ската
+  const U = new THREE.Vector3(1, 0, 0), V = plane.normal.clone().cross(U).normalize();
+  const uvFn = geo => {
+    const pos = geo.attributes.position, uv = new Float32Array(pos.count * 2), q = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) { q.fromBufferAttribute(pos, i); uv[i * 2] = q.dot(U); uv[i * 2 + 1] = q.dot(V); }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  };
   const g = new THREE.Group();
-  g.add(mesh(hexahedron(verts), mat, !isGlass));
+  const rm = mesh(hexahedron(verts), mat, !isGlass);
+  rm.userData.uvFn = uvFn;
+  g.add(rm);
   if (soffitColor && !isGlass) {
     // обшивка снизу: тонкий слой под скатом (видна на свесах и изнутри мансарды)
     const under = pts.map(v => v.clone().addScaledVector(plane.normal, -0.01).toArray());
     const ug = new THREE.BufferGeometry();
     ug.setAttribute('position', new THREE.Float32BufferAttribute([...under[0], ...under[1], ...under[2], ...under[0], ...under[2], ...under[3]], 3));
     ug.computeVertexNormals();
-    g.add(mesh(ug, material(soffitColor, null, { side: THREE.DoubleSide }), false));
+    const sm = mesh(ug, material(soffitColor, null, { kind: 'soffit', side: THREE.DoubleSide }), false);
+    sm.userData.uvFn = uvFn;
+    g.add(sm);
   }
 
   // Мансардные окна лежат в плоскости ската чуть выше покрытия.
@@ -522,6 +598,12 @@ function build(house) {
     const fi = r.floor ?? 0;
     floorGroups[fi]?.add(railing(r, house.floors[fi].elevation));
   }
+  // Обрезка по крыше, UV и слияние — один раз после сборки (нужно и для «Фото»).
+  const planesOf = collectClipPlanes([...floorGroups, roofGroup]);
+  for (const g of floorGroups) bakeGroup(g, planesOf);
+  bakeGroup(roofGroup, planesOf);
+  clearClipPlanes(planesOf);
+  photo?.sceneChanged();
 
   if (ui.floors.options.length !== house.floors.length) {
     ui.floors.innerHTML = '';
@@ -569,6 +651,7 @@ function resize() {
   const w = app.clientWidth, h = app.clientHeight;
   if (!w || !h) return;
   renderer.setSize(w, h);
+  composer.setSize(w, h);
   labelRenderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -650,13 +733,96 @@ document.getElementById('tour').onclick = startTour;
 document.getElementById('stop-tour').onclick = stopTour;
 window.addEventListener('keydown', ev => { if (tour.active && ev.key === 'Escape') stopTour(); });
 
+// ---------- фото ----------
+const photoUi = {
+  status: document.getElementById('photo-status'),
+  save: document.getElementById('photo-save'),
+};
+const photo = createPhoto({
+  renderer, scene, camera, ui: photoUi,
+  onStart() {
+    if (walk.active) walkUi.exitWalk.click();
+    if (tour.active) stopTour();
+    controls.enabled = false;
+  },
+  onStop() { controls.enabled = true; },
+});
+document.getElementById('photo').onclick = () => photo.start();
+document.getElementById('photo-close').onclick = () => photo.stop();
+photoUi.save.onclick = () => {
+  renderer.domElement.toBlob(async blob => {
+    try { await downloadFile('dom-foto.png', blob); } catch (e) { if (e?.code !== 'declined') photoUi.status.textContent = 'Сохранить не удалось.'; }
+  }, 'image/png');
+};
+window.addEventListener('keydown', ev => { if (photo.active && ev.key === 'Escape') photo.stop(); });
+
+// ---------- качество ----------
+const qualityEl = document.getElementById('quality');
+qualityEl.value = highQuality ? 'high' : 'fast';
+function applyQuality() {
+  highQuality = qualityEl.value === 'high';
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, highQuality ? 2 : 1.25));
+  const size = highQuality ? 4096 : 2048;
+  if (sun.shadow.mapSize.x !== size) {
+    sun.shadow.mapSize.set(size, size);
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null;
+  }
+  resize();
+}
+qualityEl.onchange = applyQuality;
+
+// ---------- деревья вокруг ----------
+function spruce(x, z, h, seed) {
+  // ель: ярусы «лап» с неровным краем и провисанием, ствол
+  let r0 = seed * 9301 + 49297;
+  const rnd = () => ((r0 = (r0 * 9301 + 49297) % 233280) / 233280);
+  const g = new THREE.Group();
+  const trunk = mesh(new THREE.CylinderGeometry(0.1, 0.22, h * 0.35, 10), pbr('#5b4331', 'wood-dark'));
+  trunk.position.y = h * 0.175;
+  g.add(trunk);
+  const foliage = pbr('#2d4a2b', 'foliage', { roughness: 0.92, side: THREE.DoubleSide });
+  const tiers = 11;
+  for (let i = 0; i < tiers; i++) {
+    const t = i / (tiers - 1);
+    const r = (1 - t) * h * 0.26 + 0.2;
+    const th = h * 0.2;
+    const geo = new THREE.ConeGeometry(r, th, 22, 2, true);
+    const p = geo.attributes.position, v = new THREE.Vector3();
+    for (let k = 0; k < p.count; k++) {
+      v.fromBufferAttribute(p, k);
+      const rad = Math.hypot(v.x, v.z);
+      if (rad > 1e-3) {
+        const ang = Math.atan2(v.z, v.x);
+        const jag = 1 + 0.18 * Math.sin(ang * 7 + seed + i) + 0.12 * (rnd() - 0.5);
+        v.x *= jag; v.z *= jag;
+        v.y -= (rad / r) * (rad / r) * th * 0.25;   // лапы провисают к краю
+      }
+      p.setXYZ(k, v.x, v.y, v.z);
+    }
+    geo.computeVertexNormals();
+    const cone = mesh(geo, foliage);
+    cone.position.y = h * 0.22 + t * h * 0.7;
+    cone.rotation.y = rnd() * Math.PI * 2;
+    g.add(cone);
+  }
+  g.position.set(x, 0, z);
+  return g;
+}
+const landscape = new THREE.Group();
+for (const [x, z, h, sd] of [[-8, -9, 10, 1], [-11, 2, 8.5, 2], [-7, 15, 9.5, 3], [25, -7, 11, 4], [28, 5, 8, 5], [23, 17, 9, 6], [2, 21, 7.5, 7], [15, -12, 9, 8]]) {
+  landscape.add(spruce(x, z, h, sd));
+}
+scene.add(landscape);
+
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+  if (photo.active) { photo.update(); return; }
   if (tour.active) tour.update();
   else if (walk.active) walk.update(dt);
   else controls.update();
-  renderer.render(scene, camera);
+  if (highQuality) composer.render(); else renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 });
 

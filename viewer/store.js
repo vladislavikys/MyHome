@@ -57,6 +57,17 @@ export async function openStore() {
   };
 }
 
+// Любой файл: через capability downloads в claude.ai или обычной ссылкой локально.
+export async function downloadFile(filename, blob) {
+  const downloads = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
+  if (downloads) { await downloads.save({ filename, data: blob }); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 // Файл house.json: через capability downloads в claude.ai или обычной ссылкой локально.
 export async function downloadJson(house) {
   const text = JSON.stringify(house, null, 2);
