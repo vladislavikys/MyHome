@@ -202,6 +202,14 @@ const KINDS = {
       return [mortar ? [0.78, 0.76, 0.72] : [t * (0.9 + 0.1 * n), t * (0.9 + 0.1 * n), t * (0.9 + 0.1 * n)], mortar ? 0 : 0.7 + 0.3 * n];
     }; })(),
   },
+  asphalt: {  // асфальт: мелкий щебень в тёмном вяжущем, лёгкие пятна
+    tile: 2.0, mat: { roughness: 0.92 }, normalStrength: 2.5,
+    fn: (() => { const ns = N(151); const fine = makeNoise(153, 256); const r = rng(17); return (u, v) => {
+      const big = fbm(ns, u * 3, v * 3), f = fine(u * 256, v * 256);
+      const speck = f > 0.82 ? 0.25 : 0;
+      return [0.5 + 0.12 * big + 0.12 * f + speck, 0.4 * f + 0.2 * big];
+    }; })(),
+  },
   paving: {  // тротуарная плитка
     tile: 1.2, mat: { roughness: 0.85 }, normalStrength: 5,
     fn: (() => { const ns = N(111); return (u, v) => {

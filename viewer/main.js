@@ -16,7 +16,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { textureSet, skyTexture, doorTextures, boxUVs } from './looks.js';
 import { sunPosition, localToUtc, sunTimes, fmtTime } from './sun.js';
 import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
-import { landscapeMats, buildArea, buildItem } from './landscape.js';
+import { landscapeMats, buildArea, buildItem, buildRoads } from './landscape.js';
 import { lawnMaterial, grassField, grassUniforms } from './grass.js';
 import { furnitureMats, buildFurniture } from './interior.js';
 import { CELL } from './rooms.js';
@@ -982,6 +982,24 @@ function view(mode) {
 ui.roof.onchange = ui.labels.onchange = ui.floors.onchange = applyVisibility;
 document.getElementById('top').onclick = () => { ui.roof.checked = false; applyVisibility(); view('top'); };
 document.getElementById('reset').onclick = () => view('3d');
+// Вид с улицы: глаза прохожего напротив дома (site.streetView в координатах участка)
+function siteToWorld([x, y]) {
+  const p = housePlace(house.site), a = THREE.MathUtils.degToRad(-p.rot), dx = x - p.at[0], dy = y - p.at[1];
+  return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+}
+document.getElementById('street').onclick = () => {
+  const sv = house?.site?.streetView;
+  if (!sv) return;
+  if (walk.active) walkUi.exitWalk.click();
+  if (tour.active) stopTour();
+  ui.roof.checked = true;
+  ui.floors.value = house.floors.length - 1;
+  applyVisibility();
+  const [ex, ez] = siteToWorld(sv.eye), [lx, lz] = siteToWorld(sv.look);
+  controls.target.set(lx, 2.6, lz);
+  camera.position.set(ex, 1.7, ez);
+  controls.update();
+};
 
 function resize() {
   const w = app.clientWidth, h = app.clientHeight;
@@ -1409,6 +1427,7 @@ function buildSite(site, house) {
   const LM = landscapeMats();
   (site.paths ?? []).forEach((a, i) => inner.add(buildArea(a, LM, i + 1)));
   (site.items ?? []).forEach((it, i) => inner.add(buildItem(it, LM, i + 1)));
+  inner.add(buildRoads(site, LM));
   // живая трава: везде на участке, кроме дома, построек и покрытий
   const toSite = ([x, y]) => {
     const a = THREE.MathUtils.degToRad(place.rot), c = Math.cos(a), s = Math.sin(a);

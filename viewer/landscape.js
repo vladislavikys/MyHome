@@ -39,6 +39,10 @@ export function landscapeMats() {
   };
   return {
     paving: pbr('#b9b2a6', 'paving'),
+    asphalt: pbr('#66676a', 'asphalt'),
+    dirt: pbr('#9c9282', 'gravel'),
+    shoulder: pbr('#8d877c', 'gravel'),
+    curb: pbr('#b8b5ae', 'plaster', { roughness: 0.85 }),
     gravel: pbr('#b8b1a5', 'gravel'),
     deck: pbr('#8a6440', 'deck'),
     soil: pbr('#4a3a2c', 'soil'),
@@ -317,5 +321,54 @@ export function buildItem(it, M, seed = 1) {
   }
   g.position.set(it.at[0], 0, it.at[1]);
   g.rotation.y = -THREE.MathUtils.degToRad(it.rot ?? 0);
+  return g;
+}
+
+// Дороги вокруг участка: site.roads = [{ name, from, to, width, kind: 'asphalt' | 'dirt', shoulder }]
+// и съезды от ворот/калиток до ближайшей параллельной дороги.
+function quad(a, b, w, h, mat, ext = 0) {
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]), u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [-u[1], u[0]];
+  const A = [a[0] - u[0] * ext, a[1] - u[1] * ext], B = [b[0] + u[0] * ext, b[1] + u[1] * ext];
+  const poly = [[A[0] + n[0] * w / 2, A[1] + n[1] * w / 2], [B[0] + n[0] * w / 2, B[1] + n[1] * w / 2],
+    [B[0] - n[0] * w / 2, B[1] - n[1] * w / 2], [A[0] - n[0] * w / 2, A[1] - n[1] * w / 2]];
+  const m = flat(poly, h, mat);
+  m.userData.walkable = true;
+  return m;
+}
+
+export function buildRoads(site, M) {
+  const g = new THREE.Group();
+  const roads = site.roads ?? [];
+  roads.forEach((r, i) => {
+    const sh = r.shoulder ?? 0.6;
+    g.add(quad(r.from, r.to, r.width + 2 * sh, 0.006 + i * 0.001, M.shoulder));
+    g.add(quad(r.from, r.to, r.width, 0.012 + i * 0.001, r.kind === 'dirt' ? M.dirt : M.asphalt));
+  });
+  // съезды: от ворот наружу до кромки дороги, параллельной забору
+  const B = site.boundary ?? [];
+  for (const g0 of site.gates ?? []) {
+    const gate = Array.isArray(g0) ? { at: [g0[0], g0[1]], width: g0[2] * 2 } : g0;
+    let edge = null;
+    for (let i = 0; i < B.length; i++) {
+      const a = B[i], b = B[(i + 1) % B.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+      const d = Math.abs((gate.at[0] - a[0]) * -u[1] + (gate.at[1] - a[1]) * u[0]);
+      if (d < 0.5) { edge = u; break; }
+    }
+    if (!edge) continue;
+    let best = null;
+    for (const r of roads) {
+      const L = Math.hypot(r.to[0] - r.from[0], r.to[1] - r.from[1]), ru = [(r.to[0] - r.from[0]) / L, (r.to[1] - r.from[1]) / L];
+      if (Math.abs(ru[0] * edge[0] + ru[1] * edge[1]) < 0.95) continue;         // дорога вдоль этого забора
+      const rn = [-ru[1], ru[0]];
+      const dist = (gate.at[0] - r.from[0]) * rn[0] + (gate.at[1] - r.from[1]) * rn[1];
+      const reach = Math.abs(dist) - r.width / 2;
+      if (reach > 0 && reach < 15 && (!best || reach < best.reach)) best = { reach, dir: [-rn[0] * Math.sign(dist), -rn[1] * Math.sign(dist)], r };
+    }
+    if (!best) continue;
+    const end = [gate.at[0] + best.dir[0] * (best.reach + 0.3), gate.at[1] + best.dir[1] * (best.reach + 0.3)];
+    const wide = gate.type === 'slide' || gate.width > 2;
+    g.add(quad(gate.at, end, gate.width + (wide ? 1.2 : 0.4), 0.014, wide ? (best.r.kind === 'dirt' ? M.dirt : M.asphalt) : M.paving));
+  }
   return g;
 }
