@@ -3,7 +3,16 @@
   "source": "Проект 23/21-АС: планы М1:100, фасады, разрез 1-1, план кровли",
   "units": "m",
   "note": "x — вдоль осей 1→5 (ось 1 = 0), y — от оси В (0) к осям Б (8.1) и А (9.1). Оси — по наружным граням стен.",
-  "wallColor": "#efe6d4",
+  "wallColor": "#f3eee3",
+  "facade": {
+    "style": "fachwerk",
+    "timber": "#5a3822",
+    "frames": "#5a3822",
+    "soffit": "#d8b98c",
+    "width": 0.14,
+    "panel": 1.5,
+    "bands": [[0.07, 0.85, 2.45, 2.93], [0.05, 0.95, 2.45, 3.7]]
+  },
   "wallClip": "main",
   "floors": [
     {
@@ -208,42 +217,42 @@
     },
     {
       "name": "Стойка веранды",
-      "color": "#ffffff",
+      "color": "#5a3822",
       "clip": "veranda",
       "bottom": { "rect": [0.0, 0.1, 0.0, 0.1], "h": 0 },
       "height": 3.8
     },
     {
       "name": "Стойка веранды",
-      "color": "#ffffff",
+      "color": "#5a3822",
       "clip": "veranda",
       "bottom": { "rect": [0.0, 0.1, 2.6, 2.7], "h": 0 },
       "height": 3.8
     },
     {
       "name": "Стойка веранды",
-      "color": "#ffffff",
+      "color": "#5a3822",
       "clip": "veranda",
       "bottom": { "rect": [0.0, 0.1, 5.3, 5.4], "h": 0 },
       "height": 3.8
     },
     {
       "name": "Стойка веранды",
-      "color": "#ffffff",
+      "color": "#5a3822",
       "clip": "veranda",
       "bottom": { "rect": [0.0, 0.1, 8.0, 8.1], "h": 0 },
       "height": 3.8
     },
     {
       "name": "Стойка веранды",
-      "color": "#ffffff",
+      "color": "#5a3822",
       "clip": "veranda",
       "bottom": { "rect": [1.5, 1.6, 8.0, 8.1], "h": 0 },
       "height": 3.8
     },
     {
       "name": "Ригель веранды",
-      "color": "#ffffff",
+      "color": "#5a3822",
       "bottom": { "rect": [0.0, 0.1, 0.0, 8.1], "h": 2.78 },
       "height": 0.08
     }

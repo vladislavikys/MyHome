@@ -54,6 +54,7 @@ const glassMat = new THREE.MeshStandardMaterial({
   side: THREE.DoubleSide, depthWrite: false,
 });
 const frameMat = new THREE.MeshStandardMaterial({ color: '#ffffff' });
+let soffitColor = null; // обшивка свесов снизу
 const doorMat = new THREE.MeshStandardMaterial({ color: '#6d4a2f' });
 const skylightMat = new THREE.MeshStandardMaterial({ color: '#2f4454', roughness: 0.2, side: THREE.DoubleSide });
 
@@ -168,6 +169,96 @@ function buildWall(wall, openings, floor, defaults) {
   return g;
 }
 
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Фахверк: брус на наружной грани стены — пояса, стойки, раскосы.
+// Строится в локальных координатах стены: x вдоль стены, y вверх от пола этажа, z поперёк.
+function fachwerk(wall, openings, floor, fz) {
+  const t = wall.thickness ?? 0.3;
+  if (wall.virtual || wall.material === 'glass' || t < 0.25) return null;
+  const [x1, y1] = wall.from, [x2, y2] = wall.to;
+  const L = Math.hypot(x2 - x1, y2 - y1);
+  const u = [(x2 - x1) / L, (y2 - y1) / L], n = [-u[1], u[0]];
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  // наружная сторона — та, что вне контура этажа (или дальше от его центра)
+  const outline = floor.outline ?? [];
+  const inA = pointInPoly(mx + n[0] * 0.4, my + n[1] * 0.4, outline);
+  const inB = pointInPoly(mx - n[0] * 0.4, my - n[1] * 0.4, outline);
+  let side = inA && !inB ? -1 : 1;
+  if (inA === inB) {
+    const cx = outline.reduce((a, p) => a + p[0], 0) / outline.length;
+    const cy = outline.reduce((a, p) => a + p[1], 0) / outline.length;
+    side = (mx - cx) * n[0] + (my - cy) * n[1] >= 0 ? 1 : -1;
+  }
+
+  const W = fz.width ?? 0.14, D = 0.035;
+  const z = side * (t / 2 + D / 2);
+  const mat = material(fz.timber ?? '#5a3822', 'main');
+  const H = wall.height ?? floor.height;
+  const bands = (fz.bands?.[fz.floorIdx] ?? [0.07, 0.85, 2.45, 2.93]).filter(b => b < H);
+  const g = new THREE.Group();
+  g.position.set(x1, floor.elevation, y1);
+  g.rotation.y = -Math.atan2(y2 - y1, x2 - x1);
+
+  const beam = (xa, ya, xb, yb) => {
+    const len = Math.hypot(xb - xa, yb - ya);
+    if (len < 0.05) return;
+    const m = box(len, W, D, mat);
+    m.position.set((xa + xb) / 2, (ya + yb) / 2, z);
+    m.rotation.z = Math.atan2(yb - ya, xb - xa);
+    g.add(m);
+  };
+
+  const x0 = -t / 2, x9 = L + t / 2;
+  const ops = [...openings].sort((a, b) => a.offset - b.offset)
+    .map(o => ({ a: o.offset, b: o.offset + o.width, lo: o.sill ?? 0, hi: (o.sill ?? 0) + o.height }));
+
+  // пояса: не пересекают проёмы
+  for (const h of bands) {
+    let cur = x0;
+    for (const o of ops) {
+      if (h > o.lo - W / 2 && h < o.hi + W / 2) { beam(cur, h, o.a - W / 2, h); cur = o.b + W / 2; }
+    }
+    beam(cur, h, x9, h);
+  }
+
+  const bot = bands[0] ?? 0, top = fz.floorIdx === 0 ? bands[bands.length - 1] : H;
+  const post = x => beam(x, bot - W / 2, x, top + W / 2);
+
+  // стойки: по бокам проёмов и по концам стены, простенки делим на панели ≤ facade.panel (1,5 м)
+  const spans = [];
+  let cur = x0 + W / 2;
+  for (const o of ops) { spans.push([cur, o.a - W / 2]); cur = o.b + W / 2; }
+  spans.push([cur, x9 - W / 2]);
+  const braceLo = bands[0], braceHi = bands[bands.length - 1];
+  spans.forEach(([a, b], si) => {
+    if (b - a < 0.02) { post((a + b) / 2); return; }
+    const k = Math.max(1, Math.ceil((b - a) / (fz.panel ?? 1.5)));
+    const xs = Array.from({ length: k + 1 }, (_, i) => a + ((b - a) * i) / k);
+    xs.forEach(post);
+    if (fz.floorIdx !== 0 || (fz.braces === false)) return;
+    for (let i = 0; i < k; i++) {
+      const pa = xs[i] + W / 2, pb = xs[i + 1] - W / 2;
+      if (pb - pa < 0.5) continue;
+      const first = si === 0 && i === 0, last = si === spans.length - 1 && i === k - 1;
+      if (first) beam(pa, braceLo, pb, braceHi);          // «/» у угла
+      else if (last) beam(pa, braceHi, pb, braceLo);      // «\» у угла
+      else if (k >= 2 && i % 2 === 0 && pb - pa < 1.4) {  // крест в глухом простенке
+        beam(pa, braceLo, pb, braceHi);
+        beam(pa, braceHi, pb, braceLo);
+      }
+    }
+  });
+  return g;
+}
+
 function toShape(poly) {
   return new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x, -y)));
 }
@@ -231,6 +322,10 @@ function buildFloor(floor, defaults) {
   for (const { key, w } of walls) {
     const ops = (floor.openings ?? []).filter(o => o.wall === key);
     g.add(buildWall(w, ops, floor, defaults));
+    if (defaults.facade?.style === 'fachwerk') {
+      const fw = fachwerk(w, ops, floor, defaults.facade);
+      if (fw) g.add(fw);
+    }
   }
   return g;
 }
@@ -290,6 +385,14 @@ function roofPanel(p) {
     : material(p.color ?? '#5b3a29', null, { side: THREE.DoubleSide, roughness: 0.6, metalness: 0.2 });
   const g = new THREE.Group();
   g.add(mesh(hexahedron(verts), mat, !isGlass));
+  if (soffitColor && !isGlass) {
+    // обшивка снизу: тонкий слой под скатом (видна на свесах и изнутри мансарды)
+    const under = pts.map(v => v.clone().addScaledVector(plane.normal, -0.01).toArray());
+    const ug = new THREE.BufferGeometry();
+    ug.setAttribute('position', new THREE.Float32BufferAttribute([...under[0], ...under[1], ...under[2], ...under[0], ...under[2], ...under[3]], 3));
+    ug.computeVertexNormals();
+    g.add(mesh(ug, material(soffitColor, null, { side: THREE.DoubleSide }), false));
+  }
 
   // Мансардные окна лежат в плоскости ската чуть выше покрытия.
   const heightAt = (x, y) => -(plane.normal.x * x + plane.normal.z * y + plane.constant) / plane.normal.y;
@@ -337,6 +440,8 @@ function build(house) {
   floorGroups = [];
   resetMaterials();
   const defaults = { wallColor: house.wallColor ?? '#efe9dc', clip: house.wallClip ?? null };
+  frameMat.color.set(house.facade?.frames ?? '#ffffff');
+  soffitColor = house.facade?.soffit ?? null;
 
   // Сначала крыша: из её скатов берутся плоскости срезки стен.
   for (const p of house.roofs ?? []) {
@@ -346,8 +451,8 @@ function build(house) {
     if (p.clip) (clipPlanes[p.clip] ??= []).push(plane.clone().negate());
   }
 
-  house.floors.forEach(f => {
-    const g = buildFloor(f, defaults);
+  house.floors.forEach((f, i) => {
+    const g = buildFloor(f, { ...defaults, facade: house.facade && { ...house.facade, floorIdx: i } });
     floorGroups.push(g);
     scene.add(g);
   });
