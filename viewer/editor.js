@@ -1316,6 +1316,18 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${Object.entries(fin).map(([v, n]) => `<option value="${v}" ${(c.finish ?? 'paint') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
           <label class="ed-field" for="ed-ceil-c"><span>Цвет потолка</span><input id="ed-ceil-c" type="color" value="${c.color ?? def[c.finish ?? 'paint']}"></label>
         </div>`;
+        if (floorIdx === 0) {
+          const pl = house.plinth ?? {};
+          const pf = { stone: 'Декоративный камень', plaster: 'Штукатурка', brick: 'Клинкерный кирпич' };
+          const pdef = { stone: '#8e877d', plaster: '#9a958d', brick: '#8a4a36' };
+          html += `<div class="ed-grid ed-ceil">
+            ${slider('ed-plh', 'Цоколь: высота над землёй, м', pl.height ?? 0, 0, 1.5, 0.05)}
+            <label class="ed-field" for="ed-plf"><span>Отделка цоколя</span><select id="ed-plf">
+              ${Object.entries(pf).map(([v, n]) => `<option value="${v}" ${(pl.finish ?? 'stone') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+            <label class="ed-field" for="ed-plc"><span>Цвет цоколя</span><input id="ed-plc" type="color" value="${pl.color ?? pdef[pl.finish ?? 'stone']}"></label>
+            <p class="ed-hint">Дом поднимается на высоту цоколя; у крыльца и террасы сами появляются ступени.</p>
+          </div>`;
+        }
       }
       const sk = skylights();
       if (tool === 'select' && sk.length) {
@@ -1410,6 +1422,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (siteMode) { sitePropsBind(on); return; }
     on('ed-ceil', el => { const f = floor(); f.ceiling = { finish: el.value }; propsKey = null; });
     on('ed-ceil-c', el => { const f = floor(); f.ceiling = { ...(f.ceiling ?? {}), color: el.value }; });
+    on('ed-plh', el => { const v = parseFloat(el.value); if (v >= 0 && v <= 3) house.plinth = { ...(house.plinth ?? {}), height: v }; });
+    on('ed-plf', el => { const pl = { ...(house.plinth ?? {}), finish: el.value }; delete pl.color; house.plinth = pl; propsKey = null; });
+    on('ed-plc', el => { house.plinth = { ...(house.plinth ?? {}), color: el.value }; });
     props.querySelectorAll('[data-sky]').forEach(b => b.addEventListener('click', () => {
       const s = skylights()[Number(b.dataset.sky)];
       sel = { kind: 'skylight', roof: s.roof, win: s.win };

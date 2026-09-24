@@ -872,7 +872,7 @@ function roofPanel(p) {
     wg.setAttribute('position', new THREE.Float32BufferAttribute([...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]], 3));
     wg.computeVertexNormals();
     const sm = mesh(wg, skylightMat, false);
-    sm.userData.pick = { kind: 'skylight', roof: p, win: w };
+    sm.userData.pick = { kind: 'skylight', roof: p.src ?? p, win: w };
     g.add(sm);
   }
   return { group: g, plane };
@@ -902,7 +902,81 @@ function disposeTree(obj) {
 }
 
 // Полная пересборка 3D-модели из house (после каждой правки в редакторе).
+// ---------- цоколь ----------
+// house.plinth = { height, finish: 'stone' | 'plaster' | 'brick', color, steps: [{ at, dir, width }] }
+// Дом поднимается на высоту цоколя; террасы, крыльцо, столбы и дымоход с опорой на землю — удлиняются вниз.
+const PLINTH = {
+  stone: { color: '#8e877d', kind: 'stone' },
+  plaster: { color: '#9a958d', kind: 'plaster' },
+  brick: { color: '#8a4a36', kind: 'brick' },
+};
+function liftHouse(h) {
+  const dz = Math.max(0, h.plinth?.height ?? 0);
+  if (!dz) return h;
+  const up = v => v + dz;
+  return {
+    ...h,
+    floors: h.floors.map(f => ({ ...f, elevation: up(f.elevation) })),
+    roofs: (h.roofs ?? []).map(p => ({ ...p, src: p, corners: p.corners.map(([x, y, z]) => [x, y, up(z)]) })),
+    stairs: (h.stairs ?? []).map(s => ({ ...s, h: s.h.map(up) })),
+    solids: (h.solids ?? []).map(s => {
+      if (s.type === 'panel') return s;
+      const grounded = !(s.floor > 0) && s.bottom.h <= 0.05;
+      if (grounded) return s.top ? { ...s, top: { ...s.top, h: up(s.top.h) } } : { ...s, height: s.height + dz };
+      return { ...s, bottom: { ...s.bottom, h: up(s.bottom.h) }, ...(s.top ? { top: { ...s.top, h: up(s.top.h) } } : {}) };
+    }),
+  };
+}
+// Контур, раздвинутый наружу на d (для облицовки цоколя, чуть выступающей из стены)
+function offsetOutline(poly, d) {
+  let area = 0;
+  for (let i = 0; i < poly.length; i++) { const [x0, y0] = poly[i], [x1, y1] = poly[(i + 1) % poly.length]; area += x0 * y1 - x1 * y0; }
+  const s = area > 0 ? 1 : -1;
+  const nrm = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]); return [s * (b[1] - a[1]) / L, -s * (b[0] - a[0]) / L]; };
+  return poly.map((v, i) => {
+    const n1 = nrm(poly[(i - 1 + poly.length) % poly.length], v), n2 = nrm(v, poly[(i + 1) % poly.length]);
+    const k = d / (1 + n1[0] * n2[0] + n1[1] * n2[1]);
+    return [v[0] + (n1[0] + n2[0]) * k, v[1] + (n1[1] + n2[1]) * k];
+  });
+}
+function buildPlinth(orig, lifted, g) {
+  const pl = orig.plinth, dz = pl?.height ?? 0, outline = orig.floors[0]?.outline;
+  if (!dz || !outline) return;
+  const f = PLINTH[pl.finish] ?? PLINTH.stone;
+  const mat = material(pl.color ?? f.color, null, { kind: f.kind });
+  const o = offsetOutline(outline, 0.04);
+  const m = mesh(new THREE.ExtrudeGeometry(new THREE.Shape(o.map(([x, y]) => new THREE.Vector2(x, -y))), { depth: dz + 0.1, bevelEnabled: false }), mat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = -0.1;
+  m.userData.collide = true;
+  g.add(m);
+  // отлив по верху цоколя
+  const cap = mesh(new THREE.ExtrudeGeometry(new THREE.Shape(offsetOutline(outline, 0.07).map(([x, y]) => new THREE.Vector2(x, -y))),
+    { depth: 0.03, bevelEnabled: false }), material('#3a3c3e', null, { roughness: 0.5, metalness: 0.4 }));
+  cap.rotation.x = -Math.PI / 2;
+  cap.position.y = dz - 0.03;
+  g.add(cap);
+  // ступени от крыльца и террасы к земле
+  const stepMat = material(pl.stepColor ?? '#a39c92', null, { kind: 'stone' });
+  for (const st of pl.steps ?? []) {
+    const n = Math.max(1, Math.round(dz / 0.17)), rise = dz / n, tread = 0.3;
+    const L = Math.hypot(st.dir[0], st.dir[1]), d = [st.dir[0] / L, st.dir[1] / L];
+    for (let i = 1; i <= n; i++) {
+      const top = dz - rise * i;
+      if (top <= 0.005) break;
+      const c = [st.at[0] + d[0] * tread * (i - 0.5), st.at[1] + d[1] * tread * (i - 0.5)];
+      const w = st.width;
+      const b = box(Math.abs(d[0]) > 0.5 ? tread : w, top + 0.05, Math.abs(d[0]) > 0.5 ? w : tread, stepMat);
+      b.position.set(c[0], (top - 0.05) / 2, c[1]);
+      b.userData.walkable = true;
+      g.add(b);
+    }
+  }
+}
+
 function build(house) {
+  const orig = house;
+  house = liftHouse(house);
   for (const g of floorGroups) { disposeTree(g); scene.remove(g); }
   disposeTree(roofGroup);
   roofGroup.clear();
@@ -931,6 +1005,7 @@ function build(house) {
     const fi = r.floor ?? 0;
     floorGroups[fi]?.add(railing(r, house.floors[fi].elevation));
   }
+  buildPlinth(orig, house, floorGroups[0]);
   buildCeilings(house);
   buildSite(house.site, house);
   // Обрезка по крыше, UV и слияние — один раз после сборки (нужно и для «Фото»).
