@@ -37,6 +37,15 @@ export function computeRooms(floor) {
     }
   }
 
+  // проёмы в перекрытии (лестница) — не пол
+  for (const hole of floor.holes ?? []) {
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        if (pointInPolygon(cx(i), cy(j), hole)) blocked[j * nx + i] = 1;
+      }
+    }
+  }
+
   for (const w of floor.walls) {
     const [ax, ay] = w.from, [bx, by] = w.to;
     const len = Math.hypot(bx - ax, by - ay);

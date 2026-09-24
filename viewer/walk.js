@@ -173,10 +173,10 @@ export function createWalk({ camera, dom, ui, getColliders, getWalkables }) {
   ui.noclip.addEventListener('change', () => { velY = 0; ui.noclip.blur(); });
 
   // Переместиться в точку плана (x, y) лицом по направлению yaw.
-  function teleport(x, y, yawV = yaw, h = 0) {
+  function teleport(x, y, yawV = yaw, h = 0, pitchV = 0) {
     feet.set(x, h, y);
     feet.y = floorBelow(feet);
-    yaw = yawV; velY = 0;
+    yaw = yawV; pitch = pitchV; velY = 0;
     apply();
   }
 

@@ -395,6 +395,33 @@ function stairs(s) {
   return g;
 }
 
+// Перила: стойки, поручень и балясины вдоль ломаной.
+function railing(r, elevation) {
+  const g = new THREE.Group();
+  const mat = material(r.color ?? '#5a3822');
+  const H = r.height ?? 0.95, step = r.baluster ?? 0.12;
+  const pts = r.path;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+    const len = Math.hypot(bx - ax, by - ay);
+    const ang = -Math.atan2(by - ay, bx - ax);
+    const rail = box(len + 0.06, 0.06, 0.07, mat);
+    rail.position.set((ax + bx) / 2, elevation + H, (ay + by) / 2);
+    rail.rotation.y = ang;
+    g.add(rail);
+    const n = Math.max(1, Math.round(len / step));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, post = k === 0 || k === n;
+      const b = box(post ? 0.08 : 0.03, H, post ? 0.08 : 0.03, mat);
+      b.position.set(ax + (bx - ax) * t, elevation + H / 2, ay + (by - ay) * t);
+      b.rotation.y = ang;
+      b.userData.collide = true;
+      g.add(b);
+    }
+  }
+  return g;
+}
+
 // Скат крыши: 4 угла нижней поверхности [x, y, h] + толщина вверх по нормали.
 function roofPanel(p) {
   const pts = p.corners.map(([x, y, h]) => new THREE.Vector3(x, h, y));
@@ -483,6 +510,10 @@ function build(house) {
   });
   for (const s of house.solids ?? []) floorGroups[s.floor ?? 0].add(prism(s));
   for (const s of house.stairs ?? []) floorGroups[s.floor ?? 0].add(stairs(s));
+  for (const r of house.railings ?? []) {
+    const fi = r.floor ?? 0;
+    floorGroups[fi]?.add(railing(r, house.floors[fi].elevation));
+  }
 
   if (ui.floors.options.length !== house.floors.length) {
     ui.floors.innerHTML = '';
