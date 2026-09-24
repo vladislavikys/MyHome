@@ -1,6 +1,6 @@
 {
   "name": "Жилой дом 15,6 × 9,1 м (мансардный)",
-  "revision": 1,
+  "revision": 2,
   "source": "Проект 23/21-АС: планы М1:100, фасады, разрез 1-1, план кровли",
   "units": "m",
   "note": "x — вдоль осей 1→5 (ось 1 = 0), y — от оси В (0) к осям Б (8.1) и А (9.1). Оси — по наружным граням стен.",
@@ -32,8 +32,8 @@
         { "id": "BW", "from": [7.25, 8.95], "to": [7.25, 7.95], "thickness": 0.3 },
         { "id": "S2", "from": [7.25, 7.95], "to": [3.25, 7.95], "thickness": 0.3 },
         { "id": "W", "from": [3.25, 7.95], "to": [3.25, 0.15], "thickness": 0.3 },
-        { "id": "i-pantryW", "from": [8.625, 0.3], "to": [8.625, 3.8], "thickness": 0.15, "height": 3 },
-        { "id": "i-pantryS", "from": [8.625, 3.8], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
+        { "id": "i-pantryW", "from": [8.55, 0.3], "to": [8.55, 3.8], "thickness": 0.1, "height": 3 },
+        { "id": "i-pantryS", "from": [8.55, 3.8], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
         { "id": "i-stairE", "from": [11.45, 0.3], "to": [11.45, 3.7], "thickness": 0.1, "height": 3 },
         { "id": "i-bedS", "from": [11.45, 3.68], "to": [15.3, 3.68], "thickness": 0.15, "height": 2.7 },
         { "id": "i-hallS", "from": [9.85, 5.4], "to": [15.3, 5.4], "thickness": 0.1, "height": 2.7 },
@@ -56,7 +56,7 @@
         { "wall": "S1", "type": "window", "offset": 0.75, "width": 0.75, "height": 0.75, "sill": 1.65 },
         { "wall": "BS", "type": "window", "offset": 1.15, "width": 1.8, "height": 1.5, "sill": 0.9 },
         { "wall": "W", "type": "glassdoor", "offset": 1.05, "width": 1.6, "height": 2.1 },
-        { "wall": "i-pantryS", "type": "door", "offset": 0.3, "width": 0.8, "height": 2.1 },
+        { "wall": "i-pantryS", "type": "door", "offset": 0.375, "width": 0.8, "height": 2.1 },
         { "wall": "i-bedS", "type": "door", "offset": 0.45, "width": 0.9, "height": 2.1 },
         { "wall": "i-hallS", "type": "door", "offset": 2.05, "width": 0.9, "height": 2.1 },
         { "wall": "i-bath", "type": "door", "offset": 0.5, "width": 0.8, "height": 2.1 },
@@ -413,7 +413,7 @@
             "floors.0.walls#i-stairW": { "id": "i-stairW", "from": [9.95, 1.55], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
             "floors.0.walls#i-stairW-low": { "id": "i-stairW-low", "from": [9.95, 0.3], "to": [9.95, 1.55], "thickness": 0.1, "height": 2.2 },
             "floors.0.walls#v-stairMid": null,
-            "floors.0.walls#i-pantryW": { "id": "i-pantryW", "from": [8.625, 0.3], "to": [8.625, 3.8], "thickness": 0.15, "height": 2.7 }
+            "floors.0.walls#i-pantryW": { "id": "i-pantryW", "from": [8.55, 0.3], "to": [8.55, 3.8], "thickness": 0.1, "height": 2.7 }
           }
         },
         "u": {
@@ -468,7 +468,7 @@
             "floors.0.walls#i-stairW": null,
             "floors.0.walls#i-stairW-low": null,
             "floors.0.walls#v-stairMid": { "id": "v-stairMid", "from": [9.95, 0.3], "to": [9.95, 3.8], "thickness": 0.05, "virtual": true },
-            "floors.0.walls#i-pantryW": { "id": "i-pantryW", "from": [8.625, 0.3], "to": [8.625, 3.8], "thickness": 0.15, "height": 3 }
+            "floors.0.walls#i-pantryW": { "id": "i-pantryW", "from": [8.55, 0.3], "to": [8.55, 3.8], "thickness": 0.1, "height": 3 }
           }
         }
       }
