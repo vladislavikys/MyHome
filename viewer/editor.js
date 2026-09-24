@@ -104,6 +104,12 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   const $ = id => root.querySelector('#' + id);
   const svg = $('ed-svg');
   const props = $('ed-props');
+  // панель свойств меняет высоту → меняется и область плана; без перерисовки клики «съезжают»
+  let lastSize = '';
+  new ResizeObserver(() => {
+    const r = svg.getBoundingClientRect(), key = `${Math.round(r.width)}x${Math.round(r.height)}`;
+    if (key !== lastSize && view) { lastSize = key; requestAnimationFrame(render); }
+  }).observe(svg);
 
   function renderTools() {
     $('ed-tools').innerHTML = '';
@@ -177,6 +183,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   }
   const pxPerM = () => svg.getBoundingClientRect().width / view.w;
   function toWorld(ev) {
+    // по фактической матрице отрисовки — клик попадает туда, что видно на экране
+    const m = svg.getScreenCTM?.();
+    if (m) { const q = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse()); return [q.x, q.y]; }
     const r = svg.getBoundingClientRect();
     return [view.x + ((ev.clientX - r.left) / r.width) * view.w,
             view.y + ((ev.clientY - r.top) / r.height) * (view.w / aspect())];

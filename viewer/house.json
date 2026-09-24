@@ -1,6 +1,6 @@
 {
   "name": "Жилой дом 15,6 × 9,1 м (мансардный)",
-  "revision": 8,
+  "revision": 9,
   "source": "Проект 23/21-АС: планы М1:100, фасады, разрез 1-1, план кровли",
   "units": "m",
   "note": "x — вдоль осей 1→5 (ось 1 = 0), y — от оси В (0) к осям Б (8.1) и А (9.1). Оси — по наружным граням стен.",
@@ -487,13 +487,109 @@
     }
   },
   "site": {
-    "note": "Расстановка владельца (редактор «Участок»).",
-    "revision": 2,
     "boundary": [
       [-8.5, -6],
       [26, -6],
       [26, 21],
       [-8.5, 21]
+    ],
+    "buildings": [
+      {
+        "doors": [
+          {
+            "at": [-5.03, -1.2],
+            "axis": "y",
+            "color": "#4b4f4c",
+            "height": 2.4,
+            "width": 3
+          },
+          {
+            "at": [8.6, 1.58],
+            "color": "#4b4f4c",
+            "height": 2,
+            "width": 0.9
+          }
+        ],
+        "height": 3.2,
+        "name": "Гараж",
+        "rect": [
+          -5,
+          -3.95,
+          10.6,
+          1.55
+        ],
+        "roof": "flat",
+        "roofColor": "#8d8f8c",
+        "wallColor": "#e7e2d8"
+      },
+      {
+        "doors": [
+          {
+            "at": [18.17, 2.7],
+            "axis": "y",
+            "color": "#6e4a2f",
+            "height": 1.9,
+            "width": 0.8
+          }
+        ],
+        "height": 2.6,
+        "name": "Баня",
+        "rect": [
+          18.2,
+          0.45,
+          22.7,
+          4.95
+        ],
+        "ridge": "x",
+        "rise": 1.6,
+        "roof": "gable",
+        "roofColor": "#5b3a29",
+        "rot": 90,
+        "wallColor": "#c9a27a",
+        "wallTexture": "soffit"
+      },
+      {
+        "height": 2.2,
+        "name": "Пристройка к бане",
+        "rect": [
+          18.95,
+          4.2,
+          21.95,
+          8.7
+        ],
+        "ridge": "x",
+        "rise": 1,
+        "roof": "gable",
+        "roofColor": "#5b3a29",
+        "rot": 90,
+        "wallColor": "#c9a27a",
+        "wallTexture": "soffit",
+        "join": "start"
+      },
+      {
+        "doors": [
+          {
+            "at": [21.1, -4.18],
+            "color": "#6e4a2f",
+            "height": 1.9,
+            "width": 0.9
+          }
+        ],
+        "drop": 0.4,
+        "height": 2.4,
+        "name": "Хозпостройка",
+        "rect": [
+          18.9,
+          -4.15,
+          22.5,
+          -0.55
+        ],
+        "roof": "shed",
+        "roofColor": "#8d8f8c",
+        "rot": 180,
+        "wallColor": "#c9a27a",
+        "wallTexture": "soffit"
+      }
     ],
     "fenceHeight": 2,
     "gates": [
@@ -514,103 +610,7 @@
       "at": [-1.65, 9.65],
       "rot": 0
     },
-    "buildings": [
-      {
-        "doors": [
-          {
-            "at": [-5.03, -1.2],
-            "axis": "y",
-            "color": "#4b4f4c",
-            "height": 2.4,
-            "width": 3
-          },
-          {
-            "at": [8.6, 1.58],
-            "width": 0.9,
-            "height": 2.0,
-            "color": "#4b4f4c"
-          }
-        ],
-        "height": 3.2,
-        "name": "Гараж",
-        "rect": [
-          -5,
-          -3.95,
-          10.6,
-          1.55
-        ],
-        "roof": "flat",
-        "roofColor": "#8d8f8c",
-        "wallColor": "#e7e2d8"
-      },
-      {
-        "doors": [
-          {
-            "at": [18.27, 5.3],
-            "axis": "y",
-            "width": 0.8,
-            "height": 1.9,
-            "color": "#6e4a2f"
-          }
-        ],
-        "height": 2.6,
-        "name": "Баня",
-        "rect": [
-          18.3,
-          3.05,
-          22.8,
-          7.55
-        ],
-        "rise": 1.6,
-        "roof": "gable",
-        "roofColor": "#5b3a29",
-        "rot": 90,
-        "wallColor": "#c9a27a",
-        "wallTexture": "soffit",
-        "ridge": "x"
-      },
-      {
-        "name": "Пристройка к бане",
-        "rect": [
-          18.3,
-          7.55,
-          22.8,
-          12.05
-        ],
-        "rot": 90,
-        "height": 2.2,
-        "roof": "gable",
-        "rise": 1.0,
-        "wallColor": "#c9a27a",
-        "wallTexture": "soffit",
-        "roofColor": "#5b3a29",
-        "ridge": "x"
-      },
-      {
-        "doors": [
-          {
-            "at": [20.95, -3.18],
-            "color": "#6e4a2f",
-            "height": 1.9,
-            "width": 0.9
-          }
-        ],
-        "drop": 0.4,
-        "height": 2.4,
-        "name": "Хозпостройка",
-        "rect": [
-          18.95,
-          -3.15,
-          22.55,
-          0.45
-        ],
-        "roof": "shed",
-        "roofColor": "#8d8f8c",
-        "rot": 180,
-        "wallColor": "#c9a27a",
-        "wallTexture": "soffit"
-      }
-    ],
+    "note": "Расстановка владельца (редактор «Участок»).",
     "paths": [
       {
         "name": "Дорожка от крыльца к калитке",
@@ -648,6 +648,7 @@
           [21.5, 15]
         ]
       }
-    ]
+    ],
+    "revision": 3
   }
 }

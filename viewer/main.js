@@ -1007,7 +1007,10 @@ function outbuilding(b) {
   if (b.roof === 'gable') {
     // конёк вдоль длинной стороны
     const alongX = b.ridge ? b.ridge === 'x' : w >= dpt - 1e-6;   // ridge: 'x' | 'y' — явное направление конька
-    const span = (alongX ? dpt : w) / 2 + o, len = (alongX ? w : dpt) + 2 * o, rise = b.rise ?? span * 0.7;
+    // join: 'start' | 'end' — этот торец примыкает к другому зданию: без свеса и без фронтона
+    const o0 = b.join === 'start' ? 0 : o, o1 = b.join === 'end' ? 0 : o;
+    const span = (alongX ? dpt : w) / 2 + o, len = (alongX ? w : dpt) + o0 + o1, rise = b.rise ?? span * 0.7;
+    const shift = (o1 - o0) / 2;
     for (const side of [-1, 1]) {
       const slope = Math.hypot(span, rise);
       const p = box(alongX ? len : 0.12, 0.12, alongX ? 0.12 : len, roofMat);
@@ -1015,15 +1018,16 @@ function outbuilding(b) {
       const panel = box(alongX ? len : slope, 0.1, alongX ? slope : len, roofMat);
       const ang = Math.atan2(rise, span);
       panel.position.set(
-        (x0 + x1) / 2 + (alongX ? 0 : side * span / 2),
+        (x0 + x1) / 2 + (alongX ? shift : side * span / 2),
         H + rise / 2,
-        (y0 + y1) / 2 + (alongX ? side * span / 2 : 0));
+        (y0 + y1) / 2 + (alongX ? side * span / 2 : shift));
       if (alongX) panel.rotation.x = side * ang; else panel.rotation.z = -side * ang;
       g.add(panel);
     }
     // фронтоны
     const tri = new THREE.Shape([new THREE.Vector2(-(alongX ? dpt : w) / 2, 0), new THREE.Vector2((alongX ? dpt : w) / 2, 0), new THREE.Vector2(0, rise * ((alongX ? dpt : w) / 2) / span)]);
     for (const side of [-1, 1]) {
+      if ((side < 0 && b.join === 'start') || (side > 0 && b.join === 'end')) continue;
       const gm = mesh(new THREE.ShapeGeometry(tri), pbr(b.wallColor ?? '#e9e4da', b.wallTexture ?? 'plaster', { side: THREE.DoubleSide }));
       if (alongX) { gm.rotation.y = Math.PI / 2; gm.position.set(side > 0 ? x1 : x0, H, (y0 + y1) / 2); }
       else gm.position.set((x0 + x1) / 2, H, side > 0 ? y1 : y0);
