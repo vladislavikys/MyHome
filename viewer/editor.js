@@ -364,6 +364,14 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (axis === 'y') d.axis = 'y'; else delete d.axis;
   }
 
+  // Двускатная крыша: полупролёт с свесом и уклон в градусах (как в 3D: main.js outbuilding).
+  const gableSpan = b => {
+    const w = b.rect[2] - b.rect[0], d = b.rect[3] - b.rect[1];
+    const alongX = b.ridge ? b.ridge === 'x' : w >= d - 1e-6;
+    return (alongX ? d : w) / 2 + (b.overhang ?? 0.4);
+  };
+  const gablePitch = b => { const s = gableSpan(b); return Math.atan2(b.rise ?? s * 0.7, s) * 180 / Math.PI; };
+
   function setHouseRot(deg) {
     const pl = place(), c = houseCenter();
     const S = toSite(c);
@@ -629,6 +637,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           ${num('ed-bw', 'Ширина, м', b.rect[2] - b.rect[0], 0.1)}
           ${num('ed-bd', 'Глубина, м', b.rect[3] - b.rect[1], 0.1)}
           ${num('ed-bh', 'Высота стен, м', b.height ?? 2.8, 0.1)}
+          ${(b.roof ?? 'shed') === 'gable' ? slider('ed-pitch', 'Уклон крыши, °', Math.round(gablePitch(b) * 10) / 10, 10, 60, 0.5) + `<p class="ed-readout">Конёк на высоте ${((b.height ?? 2.8) + (b.rise ?? gableSpan(b) * 0.7)).toFixed(2)} м</p>` : ''}
           <label class="ed-field" for="ed-roof"><span>Крыша</span><select id="ed-roof">
             ${[['flat', 'Плоская'], ['shed', 'Односкатная'], ['gable', 'Двускатная']].map(([v, n]) => `<option value="${v}" ${(b.roof ?? 'shed') === v ? 'selected' : ''}>${n}</option>`).join('')}
           </select></label>
@@ -719,7 +728,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       btn('ed-rr', () => setRot((b.rot ?? 0) + 90));
       on('ed-bname', el => { b.name = el.value; });
       on('ed-bh', el => { const v = parseFloat(el.value); if (v > 1) b.height = v; });
-      on('ed-roof', el => { b.roof = el.value; });
+      on('ed-pitch', el => { const v = parseFloat(el.value); if (v > 1 && v < 80) b.rise = r2(gableSpan(b) * Math.tan(v * Math.PI / 180)); });
+      on('ed-roof', el => { b.roof = el.value; propsKey = null; });
       btn('ed-adddoor', () => {
         const d = { width: 0.9, height: 2.0, color: '#6e4a2f', at: [0, 0] };
         placeDoor(b, d, rotP([bldCenter(b)[0], b.rect[3] + 1], b.rot ?? 0, bldCenter(b)));
