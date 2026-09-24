@@ -4,7 +4,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { computeRooms } from './rooms.js';
 import { stairSteps } from './stairs.js';
 import { createEditor } from './editor.js';
-import { openStore, downloadJson, downloadFile } from './store.js';
+import { openStore, downloadJson, downloadFile, writeMirror } from './store.js';
 import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
 import { applyVariant, tourPoints } from './variants.js';
@@ -1471,10 +1471,13 @@ const editor = createEditor(document.getElementById('editor'), {
 function setStatus(text) { editor.setStatus(text); }
 
 function scheduleSave() {
+  // копия в браузере — сразу, общий документ — через 0,7 с после последней правки
+  writeMirror(house, original?.revision ?? null);
   if (!store) return;
   setStatus('Сохраняю…');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
+    saveTimer = null;
     try {
       await store.save(house, original?.revision ?? null);
       setStatus(store.kind === 'shared' ? 'Сохранено в проекте' : 'Сохранено в этом браузере');
@@ -1485,6 +1488,17 @@ function scheduleSave() {
     }
   }, 700);
 }
+
+// закрытие / перезагрузка страницы: несохранённое — сразу в браузер и в проект
+function flushSave() {
+  if (!saveTimer || !house) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  writeMirror(house, original?.revision ?? null);
+  store?.save(house, original?.revision ?? null).catch(() => {});
+}
+window.addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
 
 function setEditing(on) {
   document.body.classList.toggle('editing', on);
@@ -1567,6 +1581,7 @@ async function load() {
       editor.setHouse(house, { keepView: true });
       renderVariants();
       setStatus(store.kind === 'shared' ? 'Загружены ваши правки' : 'Загружены правки из этого браузера');
+      if (saved.fromMirror) scheduleSave();   // в браузере оказалась более свежая правка — дописываем её в проект
     } else if (saved?.house?.floors) {
       // проект обновился после сохранения: берём новую версию, переносим выбор вариантов,
       // прежнюю копию кладём в резервную
