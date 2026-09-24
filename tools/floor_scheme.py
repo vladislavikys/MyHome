@@ -74,6 +74,7 @@ for (_, a), (_, b) in zip(AXES_X, AXES_X[1:]):
     text((a + b) / 2, 9.68, f'{round((b - a) * 1000)}', 13, fill='#344')
 
 # Линии высоты мансарды: где потолок (низ кровли) = 2,2 м от пола
+h22 = 0
 for roof in house.get('roofs', []):
     if roof.get('clip') != 'main':
         continue
@@ -82,6 +83,7 @@ for roof in house.get('roofs', []):
     if not min(rh, eh) <= target <= max(rh, eh):
         continue
     y = ry + (ey - ry) * (rh - target) / (rh - eh)
+    h22 += 1
     line(max(x0, 3.1), y, min(x1, 15.6), y, stroke='#d08a2a', stroke_width=1.5, stroke_dasharray='6 5')
     text(min(x1, 15.6) + 0.1, y + 0.1, 'h=2,2', 12, anchor='start', fill='#b06f10')
 
@@ -104,8 +106,14 @@ for s in house.get('solids', []):
 # Стены
 openings = floor.get('openings', [])
 win_no = 0
+door_no = 0
 for w in floor['walls']:
-    exterior = w.get('thickness', 0.3) >= 0.25
+    if w.get('virtual'):
+        continue
+    glass = w.get('material') == 'glass'
+    if glass:
+        w = {**w, 'thickness': 0.08}
+    exterior = w.get('thickness', 0.3) >= 0.25 or glass
     if blank and not exterior:
         continue
     (x1, y1), (x2, y2) = w['from'], w['to']
@@ -119,7 +127,7 @@ for w in floor['walls']:
         cuts.append((cur, o['offset']))
         cur = o['offset'] + o['width']
     cuts.append((cur, L + ext))
-    color = '#1d2733' if exterior else '#8c97a3'
+    color = '#7fb3e0' if glass else '#1d2733' if exterior else '#8c97a3'
     width = t * S
     for a, b in cuts:
         if b - a > 1e-3:
@@ -129,25 +137,36 @@ for w in floor['walls']:
     for o in ops:
         a, b = o['offset'], o['offset'] + o['width']
         ax, ay, bx, by = x1 + ux * a, y1 + uy * a, x1 + ux * b, y1 + uy * b
-        if o['type'] == 'door':
+        nx, ny = -uy, ux  # нормаль
+        mx, my = (ax + bx) / 2, (ay + by) / 2
+        if o['type'] == 'door' and not exterior:
             if blank:
                 continue
             line(ax, ay, bx, by, stroke='#8c97a3', stroke_width=2)
             continue
+        if o['type'] == 'door':
+            door_no += 1
+            line(ax, ay, bx, by, stroke='#a0692e', stroke_width=f'{max(width, 6):.1f}', stroke_linecap='butt')
+            off = 0.5
+            side = 1 if (mx + nx * off - 9) ** 2 + (my + ny * off - 4) ** 2 > (mx - 9) ** 2 + (my - 4) ** 2 else -1
+            text(mx + nx * off * side, my + ny * off * side + 0.08, f'Д{door_no}', 15, fill='#8a5a2b', font_weight='bold')
+            text(mx + nx * off * side, my + ny * off * side + 0.34, f'{round(o["width"] * 1000)}', 11, fill='#8a5a2b')
+            continue
         win_no += 1
-        line(ax, ay, bx, by, stroke='#2a7fc9', stroke_width=f'{width:.1f}', stroke_linecap='butt')
+        line(ax, ay, bx, by, stroke='#2a7fc9', stroke_width=f'{max(width, 6):.1f}', stroke_linecap='butt')
         line(ax, ay, bx, by, stroke='#fff', stroke_width=2)
-        nx, ny = -uy, ux  # нормаль
-        mx, my = (ax + bx) / 2, (ay + by) / 2
         off = 0.55 if (mx < 5 or mx > 14) else 0.45
         side = 1 if (mx + nx * off - 9) ** 2 + (my + ny * off - 4) ** 2 > (mx - 9) ** 2 + (my - 4) ** 2 else -1
+        if my + ny * off * side > 9.3:  # не залезать на размерную линию
+            side = -side
         text(mx + nx * off * side, my + ny * off * side + 0.08, f'О{win_no}', 15, fill='#1d5f99', font_weight='bold')
         text(mx + nx * off * side, my + ny * off * side + 0.34,
              f'{round(o["width"] * 1000)}', 11, fill='#1d5f99')
 
 # Мансардные окна (проекция на план)
 sky = 0
-for roof in house.get('roofs', []):
+is_top = floor_idx == len(house['floors']) - 1
+for roof in house.get('roofs', []) if is_top else []:
     for wnd in roof.get('windows', []):
         sky += 1
         (a, b), (c, d) = wnd['x'], wnd['y']
@@ -157,16 +176,21 @@ for roof in house.get('roofs', []):
 # Подписи помещений
 if not blank:
     for r in floor.get('rooms', []):
-        cx, cy = r.get('label') or [sum(p[0] for p in r['polygon']) / len(r['polygon']),
-                                    sum(p[1] for p in r['polygon']) / len(r['polygon'])]
+        if 'at' in r:
+            cx, cy = r['at']
+        else:
+            cx, cy = r.get('label') or [sum(p[0] for p in r['polygon']) / len(r['polygon']),
+                                        sum(p[1] for p in r['polygon']) / len(r['polygon'])]
         text(cx, cy, r['name'], 14, fill='#556')
 
 title = f'{floor["name"]} — {"пустая схема" if blank else "текущие перегородки (пунктир)"}'
 legend = [
     ('#1d2733', 'наружные стены 300 мм'),
-    ('#2a7fc9', 'окна в стенах (О) и мансардные окна (М, пунктир)'),
-    ('#d08a2a', 'линия высоты 2,2 м под скатом крыши'),
+    ('#2a7fc9', 'окна и витражи (О)' + (', мансардные окна (М, пунктир)' if floor_idx == len(house['floors']) - 1 else '')),
+    ('#a0692e', 'наружные двери (Д)'),
 ]
+if h22:
+    legend.append(('#d08a2a', 'линия высоты 2,2 м под скатом крыши'))
 if not blank:
     legend.insert(1, ('#8c97a3', 'перегородки сейчас — можно зачеркнуть и нарисовать свои'))
 
@@ -182,4 +206,4 @@ for i, (c, s) in enumerate(legend):
     svg.append(f'<text x="{OX + 36}" y="{y - 3}" font-size="14" fill="#334">{s}</text>')
 svg += el + ['</svg>']
 out.write_text('\n'.join(svg))
-print(out, f'windows={win_no} skylights={sky}')
+print(out, f'windows={win_no} doors={door_no} skylights={sky}')
