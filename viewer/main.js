@@ -13,7 +13,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { textureSet, skyTexture } from './looks.js';
+import { textureSet, skyTexture, doorTextures } from './looks.js';
 import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
 import { createPhoto } from './photo.js';
 
@@ -101,9 +101,23 @@ const glassMat = new THREE.MeshStandardMaterial({
   color: '#c8dbe6', transparent: true, opacity: 0.18, roughness: 0.03, metalness: 0.1,
   envMapIntensity: 2.2, side: THREE.DoubleSide, depthWrite: false,
 });
-const frameMat = pbr('#ffffff', 'wood-dark');
+const frameMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.55 });
 let soffitColor = null; // обшивка свесов снизу
-const doorMat = pbr('#7a5234', 'wood-dark');
+// Межкомнатные — шпон ореха с фрезеровкой; входная — крашеный металл с филёнками.
+const doorStyles = {
+  interior: () => { const t = doorTextures('walnut'); return {
+    leaf: new THREE.MeshStandardMaterial({ color: '#6b4630', map: t.map, normalMap: t.normalMap, roughness: 0.5 }),
+    frame: new THREE.MeshStandardMaterial({ color: '#5c3d28', roughness: 0.5 }),
+    handle: new THREE.MeshStandardMaterial({ color: '#1b1b1b', roughness: 0.35, metalness: 0.8 }),
+  }; },
+  metal: () => { const t = doorTextures('metal'); return {
+    leaf: new THREE.MeshStandardMaterial({ color: '#3e6a62', map: t.map, normalMap: t.normalMap, roughness: 0.42, metalness: 0.45 }),
+    frame: new THREE.MeshStandardMaterial({ color: '#3a6159', roughness: 0.45, metalness: 0.4 }),
+    handle: new THREE.MeshStandardMaterial({ color: '#b08a45', roughness: 0.28, metalness: 1 }),
+  }; },
+};
+const doorMatCache = {};
+const doorMats = style => (doorMatCache[style] ??= doorStyles[style]());
 const skylightMat = new THREE.MeshStandardMaterial({ color: '#1f2c36', roughness: 0.04, metalness: 0.3, envMapIntensity: 2, side: THREE.DoubleSide });
 
 // Плоскости срезки: стены группы обрезаются снизу скатами крыши, так получаются фронтоны.
@@ -176,29 +190,74 @@ function openingFill(o, t) {
     const n = Math.max(1, Math.round(o.width / 0.9));
     for (let i = 1; i < n; i++) add(0.04, o.height, -o.width / 2 + (o.width * i) / n, o.height / 2, frameMat);
   } else {
-    // полотно открыто внутрь (на сторону +z, как дуга в редакторе), петли у начала проёма;
-    // закрытая дверь — "open": 0
-    const leafW = o.width - 2 * f;
-    const leaf = box(leafW, o.height - f, 0.04, doorMat);
+    // Дверь: наличники + полотно на петлях (или раздвижное) — подвижная часть, её можно открыть/закрыть.
+    const style = o.style ?? (t >= 0.25 ? 'metal' : 'interior');
+    const M = doorMats(style);
+    const metal = style === 'metal';
+    for (const side of [-1, 1]) {
+      const z = side * (d / 2 + 0.012);
+      const top = box(o.width + 0.16, 0.08, 0.02, M.frame); top.position.set(0, o.height + 0.04, z); g.add(top);
+      for (const sx of [-1, 1]) { const st = box(0.08, o.height + 0.08, 0.02, M.frame); st.position.set(sx * (o.width / 2 + 0.04), (o.height + 0.08) / 2 - 0.04, z); g.add(st); }
+    }
+    if (metal) {
+      // карниз над входной дверью, снаружи
+      const out = o.flip ? 1 : -1;
+      const c1 = box(o.width + 0.5, 0.1, 0.16, M.frame); c1.position.set(0, o.height + 0.14, out * (d / 2 + 0.08)); g.add(c1);
+      const c2 = box(o.width + 0.36, 0.06, 0.1, M.frame); c2.position.set(0, o.height + 0.06, out * (d / 2 + 0.05)); g.add(c2);
+    }
+    const leafW = o.width - 2 * f, leafH = o.height - f, th = metal ? 0.07 : 0.04;
+    const sw = o.flip ? -1 : 1, sh = o.hingeEnd ? -1 : 1;
+    const leaf = box(leafW, leafH, th, M.leaf);
+    leaf.userData.collide = true;
+    const hx = sh * (leafW - 0.08);
+    const addHandle = (parent, zSide) => {
+      const zz = zSide * (th / 2 + 0.012);
+      const ros = mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.012, 20), M.handle);
+      ros.rotation.x = Math.PI / 2; ros.position.set(hx, 1.0, zz); parent.add(ros);
+      const lever = box(0.13, 0.018, 0.022, M.handle);
+      lever.position.set(hx - sh * 0.065, 1.0, zz + zSide * 0.03); parent.add(lever);
+      const neck = box(0.018, 0.018, 0.04, M.handle);
+      neck.position.set(hx, 1.0, zz + zSide * 0.015); parent.add(neck);
+      if (metal) {
+        const lock = mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.012, 16), M.handle);
+        lock.rotation.x = Math.PI / 2; lock.position.set(hx, 0.86, zz); parent.add(lock);
+      }
+    };
+    const content = new THREE.Group();
+    leaf.position.set(sh * leafW / 2, leafH / 2, 0);
+    content.add(leaf);
+    addHandle(content, 1); addHandle(content, -1);
+    if (metal) {
+      const out = o.flip ? 1 : -1, zz = out * (th / 2 + 0.03);
+      const head = mesh(new THREE.SphereGeometry(0.055, 20, 14), M.handle);
+      head.scale.set(1, 1.1, 0.5); head.position.set(sh * leafW / 2, 1.62, zz); content.add(head);
+      const ring = mesh(new THREE.TorusGeometry(0.055, 0.009, 10, 28), M.handle);
+      ring.position.set(sh * leafW / 2, 1.5, zz + out * 0.01); content.add(ring);
+    }
+    const holder = new THREE.Group();
+    holder.userData.dynamic = true;
+    holder.userData.pick = { kind: 'opening', opening: o };
     if (o.slide) {
-      // раздвижная: полотно вдоль стены на её стороне (flip — другая сторона), сдвинуто к началу проёма
-      const sw = o.flip ? -1 : 1, sh = o.hingeEnd ? -1 : 1;
       const z = sw * (t / 2 + 0.035);
-      leaf.position.set(-sh * leafW * (o.open ?? 0.8), (o.height - f) / 2, z);
-      g.add(leaf);
-      const rail = box(o.width * 2, 0.05, 0.05, frameMat);   // направляющая над проёмом
+      holder.position.set(sh * (-o.width / 2 + f), 0, z);
+      holder.add(content);
+      const openX = -sh * leafW * (o.open ?? 0.8);
+      holder.userData.door = { kind: 'slide', node: content, closed: 0, opened: openX, state: 1, value: openX };
+      content.position.x = openX;
+      const rail = box(o.width * 2, 0.05, 0.05, M.frame);
       rail.position.set(-sh * o.width * 0.5, o.height + 0.03, z);
       g.add(rail);
-      return g;
+    } else {
+      // holder — неподвижное крепление у петель, hinge — поворачивается
+      holder.position.set(sh * (-o.width / 2 + f), 0, sw * d / 2);
+      const hinge = new THREE.Group();
+      hinge.add(content);
+      holder.add(hinge);
+      const openA = -sw * sh * THREE.MathUtils.degToRad(o.open ?? 80);
+      holder.userData.door = { kind: 'swing', node: hinge, closed: 0, opened: openA, state: 1, value: openA };
+      hinge.rotation.y = openA;
     }
-    const hinge = new THREE.Group();
-    const sw = o.flip ? -1 : 1;       // flip: открывается на другую сторону стены
-    const sh = o.hingeEnd ? -1 : 1;   // hingeEnd: петли у конца проёма, а не у начала
-    hinge.position.set(sh * (-o.width / 2 + f), 0, sw * d / 2);
-    hinge.rotation.y = -sw * sh * THREE.MathUtils.degToRad(o.open ?? 80);
-    leaf.position.set(sh * leafW / 2, (o.height - f) / 2, 0.02);
-    hinge.add(leaf);
-    g.add(hinge);
+    g.add(holder);
   }
   return g;
 }
@@ -598,11 +657,13 @@ function build(house) {
     const fi = r.floor ?? 0;
     floorGroups[fi]?.add(railing(r, house.floors[fi].elevation));
   }
+  buildSite(house.site);
   // Обрезка по крыше, UV и слияние — один раз после сборки (нужно и для «Фото»).
   const planesOf = collectClipPlanes([...floorGroups, roofGroup]);
   for (const g of floorGroups) bakeGroup(g, planesOf);
   bakeGroup(roofGroup, planesOf);
   clearClipPlanes(planesOf);
+  collectDoors();
   photo?.sceneChanged();
 
   if (ui.floors.options.length !== house.floors.length) {
@@ -615,7 +676,7 @@ function build(house) {
   bounds.expandByObject(roofGroup);
   colliders = [];
   walkables = [ground];
-  for (const g of floorGroups) g.traverse(o => {
+  for (const g of [...floorGroups, siteGroup]) g.traverse(o => {
     if (!o.isMesh) return;
     if (o.userData.collide) colliders.push(o);
     if (o.userData.walkable) walkables.push(o);
@@ -809,15 +870,162 @@ function spruce(x, z, h, seed) {
   g.position.set(x, 0, z);
   return g;
 }
-const landscape = new THREE.Group();
-for (const [x, z, h, sd] of [[-8, -9, 10, 1], [-11, 2, 8.5, 2], [-7, 15, 9.5, 3], [25, -7, 11, 4], [28, 5, 8, 5], [23, 17, 9, 6], [2, 21, 7.5, 7], [15, -12, 9, 8]]) {
-  landscape.add(spruce(x, z, h, sd));
+// ---------- участок (генплан): граница с забором, гараж, баня, дорожки ----------
+const siteGroup = new THREE.Group();
+scene.add(siteGroup);
+
+function flatQuad(poly, h, mat) {
+  const shape = new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x, -y)));
+  const m = mesh(new THREE.ShapeGeometry(shape), mat, false);
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = h;
+  return m;
 }
-scene.add(landscape);
+
+function outbuilding(b) {
+  const g = new THREE.Group();
+  const [x0, y0, x1, y1] = b.rect;
+  const w = x1 - x0, dpt = y1 - y0, H = b.height ?? 2.8;
+  const walls = box(w, H, dpt, pbr(b.wallColor ?? '#e9e4da', b.wallTexture ?? 'plaster'));
+  walls.position.set((x0 + x1) / 2, H / 2, (y0 + y1) / 2);
+  walls.userData.collide = true;
+  g.add(walls);
+  const plinth = box(w + 0.04, 0.3, dpt + 0.04, pbr('#9a8f84', 'stone'));
+  plinth.position.set((x0 + x1) / 2, 0.15, (y0 + y1) / 2);
+  g.add(plinth);
+  const roofMat = pbr(b.roofColor ?? '#5b3a29', 'roof', { side: THREE.DoubleSide });
+  const o = b.overhang ?? 0.4;
+  if (b.roof === 'gable') {
+    // конёк вдоль длинной стороны
+    const alongX = w >= dpt;
+    const span = (alongX ? dpt : w) / 2 + o, len = (alongX ? w : dpt) + 2 * o, rise = b.rise ?? span * 0.7;
+    for (const side of [-1, 1]) {
+      const slope = Math.hypot(span, rise);
+      const p = box(alongX ? len : 0.12, 0.12, alongX ? 0.12 : len, roofMat);
+      p.scale.set(1, 1, 1);
+      const panel = box(alongX ? len : slope, 0.1, alongX ? slope : len, roofMat);
+      const ang = Math.atan2(rise, span);
+      panel.position.set(
+        (x0 + x1) / 2 + (alongX ? 0 : side * span / 2),
+        H + rise / 2,
+        (y0 + y1) / 2 + (alongX ? side * span / 2 : 0));
+      if (alongX) panel.rotation.x = side * ang; else panel.rotation.z = -side * ang;
+      g.add(panel);
+    }
+    // фронтоны
+    const tri = new THREE.Shape([new THREE.Vector2(-(alongX ? dpt : w) / 2, 0), new THREE.Vector2((alongX ? dpt : w) / 2, 0), new THREE.Vector2(0, rise * ((alongX ? dpt : w) / 2) / span)]);
+    for (const side of [-1, 1]) {
+      const gm = mesh(new THREE.ShapeGeometry(tri), pbr(b.wallColor ?? '#e9e4da', b.wallTexture ?? 'plaster', { side: THREE.DoubleSide }));
+      if (alongX) { gm.rotation.y = Math.PI / 2; gm.position.set(side > 0 ? x1 : x0, H, (y0 + y1) / 2); }
+      else gm.position.set((x0 + x1) / 2, H, side > 0 ? y1 : y0);
+      g.add(gm);
+    }
+  } else {
+    // односкатная
+    const drop = b.drop ?? 0.5;
+    const panel = box(w + 2 * o, 0.12, Math.hypot(dpt + 2 * o, drop), roofMat);
+    panel.position.set((x0 + x1) / 2, H + 0.06 + drop / 2 * 0, (y0 + y1) / 2);
+    panel.rotation.x = Math.atan2(drop, dpt + 2 * o) * (b.slopeTo === 'north' ? -1 : 1);
+    g.add(panel);
+  }
+  for (const d of b.doors ?? []) {
+    const leaf = box(d.width, d.height, 0.06, pbr(d.color ?? '#4a4038', null, { roughness: 0.5, metalness: 0.4 }));
+    const [dx, dy] = d.at;
+    leaf.position.set(dx, d.height / 2, dy);
+    if (d.axis === 'y') leaf.rotation.y = Math.PI / 2;
+    g.add(leaf);
+  }
+  return g;
+}
+
+function fence(boundary, gaps, height = 1.6) {
+  const g = new THREE.Group();
+  const post = pbr('#3b3f3c', null, { roughness: 0.5, metalness: 0.5 });
+  const board = pbr('#6b4b33', 'soffit');
+  for (let i = 0; i < boundary.length; i++) {
+    const a = boundary[i], b = boundary[(i + 1) % boundary.length];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+    const n = Math.ceil(L / 2.5);
+    for (let k = 0; k < n; k++) {
+      const t0 = (k / n) * L, t1 = ((k + 1) / n) * L, tm = (t0 + t1) / 2;
+      const mx = a[0] + ux * tm, my = a[1] + uy * tm;
+      if (gaps.some(([gx, gy, r]) => Math.hypot(mx - gx, my - gy) < r)) continue;
+      const seg = box(t1 - t0, height - 0.15, 0.03, board);
+      seg.position.set(mx, 0.1 + (height - 0.15) / 2, my);
+      seg.rotation.y = -Math.atan2(uy, ux);
+      seg.userData.collide = true;
+      g.add(seg);
+      const p = box(0.08, height + 0.1, 0.08, post);
+      p.position.set(a[0] + ux * t0, (height + 0.1) / 2, a[1] + uy * t0);
+      g.add(p);
+    }
+  }
+  return g;
+}
+
+function buildSite(site) {
+  siteGroup.traverse(o => o.geometry?.dispose());
+  siteGroup.clear();
+  if (!site) return;
+  const pav = pbr('#b9b2a6', 'paving');
+  for (const p of site.paths ?? []) {
+    const m = flatQuad(p.poly, 0.012, p.texture === 'gravel' ? pbr('#a39c90', 'stone') : pav);
+    m.userData.walkable = true;
+    siteGroup.add(m);
+  }
+  for (const b of site.buildings ?? []) siteGroup.add(outbuilding(b));
+  if (site.boundary) siteGroup.add(fence(site.boundary, site.gates ?? [], site.fenceHeight));
+  bakeGroup(siteGroup);
+}
+
+// ---------- двери: открыть / закрыть ----------
+let doors = [];
+function collectDoors() {
+  doors = [];
+  for (const g of floorGroups) g.traverse(o => { if (o.userData.door) doors.push(o); });
+}
+function animateDoors(dt) {
+  for (const h of doors) {
+    const d = h.userData.door;
+    const target = d.state ? d.opened : d.closed;
+    if (Math.abs(d.value - target) < 1e-4) continue;
+    const speed = d.kind === 'swing' ? 3.2 : 2.2;   // рад/с или м/с
+    d.value += Math.sign(target - d.value) * Math.min(Math.abs(target - d.value), speed * dt);
+    if (d.kind === 'swing') d.node.rotation.y = d.value; else d.node.position.x = d.value;
+  }
+}
+// Ближайшая дверь перед камерой (до 2 м).
+function toggleNearestDoor() {
+  const cam = camera.position, fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  // выбираем дверь, на которую смотрим: важнее направление взгляда, чем расстояние
+  let best = null, bestScore = -Infinity;
+  const p = new THREE.Vector3();
+  fwd.y = 0; fwd.normalize();
+  for (const h of doors) {
+    if (!h.parent?.visible) continue;
+    h.getWorldPosition(p);
+    p.y = cam.y;
+    const d = p.distanceTo(cam);
+    if (d > 2.2) continue;
+    const dot = p.clone().sub(cam).setY(0).normalize().dot(fwd);
+    if (dot < 0.4 && d > 0.8) continue;
+    const score = dot - d * 0.25;
+    if (score > bestScore) { best = h; bestScore = score; }
+  }
+  if (best) best.userData.door.state ^= 1;
+  return !!best;
+}
+window.addEventListener('keydown', ev => {
+  if (walk.active && ev.code === 'KeyE' && !ev.target.closest?.('input, select, textarea')) toggleNearestDoor();
+});
+document.getElementById('door-toggle').onclick = () => toggleNearestDoor();
 
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+  animateDoors(dt);
   if (photo.active) { photo.update(); return; }
   if (tour.active) tour.update();
   else if (walk.active) walk.update(dt);

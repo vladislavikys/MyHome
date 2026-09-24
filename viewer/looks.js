@@ -85,8 +85,8 @@ const KINDS = {
   'wood-dark': {
     tile: 1.2, mat: { roughness: 0.7 }, normalStrength: 1.5,
     fn: (() => { const ns = N(21); const w = makeNoise(29, 16); return (u, v) => {
-      const grain = 0.5 + 0.5 * Math.sin((v * 60 + fbm(ns, u * 2, v * 8) * 8) * Math.PI);
-      const a = 0.72 + 0.2 * grain + 0.08 * w(u * 16, v * 4);
+      const grain = 0.5 + 0.5 * Math.sin((v * 90 + fbm(ns, u * 1.5, v * 3) * 1.5) * Math.PI);
+      const a = 0.78 + 0.1 * grain + 0.12 * w(u * 24, v * 3);
       return [a, grain * 0.6];
     }; })(),
   },
@@ -154,6 +154,27 @@ const KINDS = {
       const fv = (v * 10) % 1, gap = fv < 0.06;
       const grain = fbm(ns, u * 3, v * 30);
       return [gap ? 0.55 : 0.85 + 0.15 * grain, gap ? 0 : 0.7];
+    }; })(),
+  },
+  brick: {  // кирпич, ложковая перевязка
+    tile: 1.0, mat: { roughness: 0.85 }, normalStrength: 6,
+    fn: (() => { const ns = N(101); const r = rng(7); const tones = Array.from({ length: 256 }, () => 0.72 + r() * 0.28); return (u, v) => {
+      const rows = 15, row = Math.floor(v * rows), fv = v * rows - row;
+      const cols = 4, uu = (u + (row % 2) * 0.125) % 1, col = Math.floor(uu * cols), fu = uu * cols - col;
+      const mortar = fv < 0.14 || fu < 0.04;
+      const n = fbm(ns, u * 12, v * 12);
+      const t = tones[(row * 17 + col * 5) % 256];
+      return [mortar ? [0.78, 0.76, 0.72] : [t * (0.9 + 0.1 * n), t * (0.9 + 0.1 * n), t * (0.9 + 0.1 * n)], mortar ? 0 : 0.7 + 0.3 * n];
+    }; })(),
+  },
+  paving: {  // тротуарная плитка
+    tile: 1.2, mat: { roughness: 0.85 }, normalStrength: 5,
+    fn: (() => { const ns = N(111); return (u, v) => {
+      const rows = 6, row = Math.floor(v * rows), fv = v * rows - row;
+      const cols = 3, uu = (u + (row % 2) * 0.5 / cols) % 1, fu = (uu * cols) % 1;
+      const joint = fv < 0.05 || fu < 0.025;
+      const n = fbm(ns, u * 10, v * 10);
+      return [joint ? 0.55 : 0.82 + 0.15 * n, joint ? 0 : 0.8];
     }; })(),
   },
   grass: {
@@ -240,4 +261,61 @@ export function boxUVs(geometry) {
     }
   }
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
+// Фактуры дверных полотен (натягиваются на полотно целиком, UV 0..1).
+const doorCache = new Map();
+export function doorTextures(style) {
+  if (doorCache.has(style)) return doorCache.get(style);
+  const W = 256, H = 640;
+  const col = new Uint8ClampedArray(W * H * 4), hgt = new Float32Array(W * H);
+  const ns = N(style === 'metal' ? 131 : 121);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const u = i / W, v = 1 - j / H;          // v=0 низ
+    let a, h = 0.5;
+    if (style === 'metal') {
+      // металл, покрашенный: филёнки — большая сверху, две снизу
+      const inRect = (x0, y0, x1, y1) => u > x0 && u < x1 && v > y0 && v < y1;
+      const rim = (x0, y0, x1, y1, w) => inRect(x0, y0, x1, y1) && !inRect(x0 + w, y0 + w * 0.4, x1 - w, y1 - w * 0.4);
+      h = 0.5;
+      for (const r of [[0.2, 0.44, 0.8, 0.9], [0.2, 0.25, 0.8, 0.37], [0.2, 0.06, 0.8, 0.2]]) {
+        if (rim(...r, 0.05)) h = 0.2;
+        else if (inRect(...r)) h = 0.75;
+      }
+      a = 0.9 + 0.1 * fbm(ns, u * 8, v * 16);
+    } else {
+      // шпон ореха, по центру — вертикальные фрезерованные канавки, внизу тонкий шов
+      // ровные продольные волокна шпона + мелкий шум
+      const grain = 0.5 + 0.5 * Math.sin((u * 70 + fbm(ns, u * 2, v * 3) * 1.2) * Math.PI);
+      const fine = fbm(ns, u * 40, v * 2);
+      a = 0.8 + 0.08 * grain + 0.1 * fine;
+      if (u > 0.36 && u < 0.64) {
+        const g = ((u - 0.36) / 0.28) * 7 % 1;
+        h = 0.5 + 0.45 * Math.cos(g * 2 * Math.PI);
+        a *= 0.85 + 0.15 * h;
+      }
+      if (Math.abs(v - 0.33) < 0.003 && (u < 0.36 || u > 0.64)) { h = 0.1; a *= 0.6; }
+    }
+    const k = (j * W + i) * 4;
+    col[k] = col[k + 1] = col[k + 2] = a * 255; col[k + 3] = 255;
+    hgt[j * W + i] = h;
+  }
+  const nor = new Uint8ClampedArray(W * H * 4);
+  const st = style === 'metal' ? 6 : 4;
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const g = (x, y) => hgt[Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))];
+    const nx = (g(i - 1, j) - g(i + 1, j)) * st, ny = (g(i, j + 1) - g(i, j - 1)) * st;
+    const l = Math.hypot(nx, ny, 1), k = (j * W + i) * 4;
+    nor[k] = (nx / l * 0.5 + 0.5) * 255; nor[k + 1] = (ny / l * 0.5 + 0.5) * 255; nor[k + 2] = (1 / l * 0.5 + 0.5) * 255; nor[k + 3] = 255;
+  }
+  const mk = (d, srgb) => {
+    const t = new THREE.DataTexture(d, W, H, THREE.RGBAFormat);
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 8;
+    t.flipY = false; t.needsUpdate = true;
+    return t;
+  };
+  const res = { map: mk(col, true), normalMap: mk(nor, false) };
+  doorCache.set(style, res);
+  return res;
 }

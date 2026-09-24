@@ -55,8 +55,13 @@ export function clearClipPlanes(map) {
 
 export function bakeGroup(group, planesOf = collectClipPlanes([group])) {
   group.updateMatrixWorld(true);
+  // подвижные части (двери) не запекаем — переносим в корень группы как есть
+  const dynamics = [];
+  group.traverse(o => { if (o.userData.dynamic) dynamics.push(o); });
+  for (const d of dynamics) group.attach(d);
+  const inDynamic = o => { for (let q = o; q && q !== group; q = q.parent) if (q.userData.dynamic) return true; return false; };
   const meshes = [];
-  group.traverse(o => { if (o.isMesh) meshes.push(o); });
+  group.traverse(o => { if (o.isMesh && !inDynamic(o)) meshes.push(o); });
   const buckets = new Map();
   const keep = [];
 
@@ -93,6 +98,7 @@ export function bakeGroup(group, planesOf = collectClipPlanes([group])) {
   group.traverse(o => { if (o.isCSS2DObject) labels.push(o); });
   group.clear();
   for (const l of labels) group.add(l);
+  for (const d of dynamics) group.add(d);
 
   for (const { mat, flags, cast, geos } of buckets.values()) {
     const merged = mergeGeometries(geos, false);
