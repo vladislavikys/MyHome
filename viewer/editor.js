@@ -77,6 +77,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   let drag = null;
   let rooms = { regions: [], rooms: [] };
   let view = null;       // {x, y, w} — viewBox в метрах
+  let fitted = false;    // вид — «весь план» (пользователь не двигал и не приближал)
   const undoStack = [];
   let pending = null;
   const pointers = new Map();
@@ -105,11 +106,41 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   const svg = $('ed-svg');
   const props = $('ed-props');
   // панель свойств меняет высоту → меняется и область плана; без перерисовки клики «съезжают»
-  let lastSize = '';
+  // при изменении размера сохраняем центр вида, а выбранный объект возвращаем в видимую часть
+  let lastSize = '', lastAspect = 0;
   new ResizeObserver(() => {
     const r = svg.getBoundingClientRect(), key = `${Math.round(r.width)}x${Math.round(r.height)}`;
-    if (key !== lastSize && view) { lastSize = key; requestAnimationFrame(render); }
+    if (key === lastSize || !view || !r.height) return;
+    const a = r.width / r.height;
+    lastSize = key;
+    if (fitted) { lastAspect = a; fit(); return; }   // вид не трогали — вписываем план заново
+    if (lastAspect) {
+      const h0 = view.w / lastAspect, h1 = view.w / a;
+      view = { ...view, y: view.y + (h0 - h1) / 2 };
+    }
+    lastAspect = a;
+    keepSelectionVisible();
+    requestAnimationFrame(render);
   }).observe(svg);
+  function selCenter() {
+    if (!sel) return null;
+    const c = poly => { const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+    if (sel.kind === 'path') return c(sel.path.poly);
+    if (sel.kind === 'bld' || sel.kind === 'bdoor') return c(bldPoly(sel.b));
+    if (sel.kind === 'item') return sel.it.at;
+    if (sel.kind === 'furn') return sel.it.at;
+    if (sel.kind === 'house') return c(houseOutline().map(toSite));
+    return null;
+  }
+  function keepSelectionVisible() {
+    const p = selCenter();
+    if (!p || !view) return;
+    const h = view.w / aspect();
+    let { x, y } = view;
+    if (p[0] < x || p[0] > x + view.w) x = p[0] - view.w / 2;
+    if (p[1] < y || p[1] > y + h) y = p[1] - h / 2;
+    view = { ...view, x, y };
+  }
 
   function renderTools() {
     $('ed-tools').innerHTML = '';
@@ -175,6 +206,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     const aspect = height > 0 ? width / height : 1.6;
     const w = Math.max(bw, bh * aspect);
     view = { x: bx - (w - bw) / 2, y: by - (w / aspect - bh) / 2, w };
+    fitted = true;
     render();
   }
   function aspect() {
@@ -191,6 +223,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             view.y + ((ev.clientY - r.top) / r.height) * (view.w / aspect())];
   }
   function zoomAt(p, k) {
+    fitted = false;
     const nw = Math.min(60, Math.max(2, view.w * k));
     const f = nw / view.w;
     view = { x: p[0] - (p[0] - view.x) * f, y: p[1] - (p[1] - view.y) * f, w: nw };
@@ -604,6 +637,24 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     }
   }
 
+  // Сдвиг выбранного кнопками-стрелками (шаг — в м)
+  let nudgeStep = 0.5;
+  function nudge(dx, dy) {
+    const add = q => [r2(q[0] + dx), r2(q[1] + dy)];
+    if (sel?.kind === 'path') sel.path.poly = sel.path.poly.map(add);
+    else if (sel?.kind === 'item') sel.it.at = add(sel.it.at);
+    else if (sel?.kind === 'house') place().at = add(place().at);
+    else if (sel?.kind === 'bld') {
+      const b = sel.b;
+      b.rect = [b.rect[0] + dx, b.rect[1] + dy, b.rect[2] + dx, b.rect[3] + dy].map(r2);
+      for (const d of b.doors ?? []) d.at = add(d.at);
+    }
+  }
+  const moveBtns = what => `<div class="ed-move"><span>Сдвинуть ${what}:</span>
+      <button type="button" data-nudge="-1,0" aria-label="Влево">←</button><button type="button" data-nudge="0,-1" aria-label="Вверх">↑</button>
+      <button type="button" data-nudge="0,1" aria-label="Вниз">↓</button><button type="button" data-nudge="1,0" aria-label="Вправо">→</button>
+      <select id="ed-nstep" aria-label="Шаг">${[0.1, 0.5, 1, 2].map(v => `<option value="${v}" ${v === nudgeStep ? 'selected' : ''}>${String(v).replace('.', ',')} м</option>`).join('')}</select></div>`;
+
   function siteProps(field, num, slider) {
     const rotBtns = `<div class="ed-btnrow"><button type="button" id="ed-rl">↺ 90°</button><button type="button" id="ed-rr">↻ 90°</button></div>`;
     const rot15 = `<div class="ed-btnrow"><button type="button" id="ed-rl">↺ 90°</button><button type="button" id="ed-rl15">↺ 15°</button><button type="button" id="ed-rr15">↻ 15°</button><button type="button" id="ed-rr">↻ 90°</button></div>`;
@@ -621,13 +672,14 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
         <div class="ed-grid">
           ${slider('ed-isize', 'Размер', it.size ?? 1, 0.5, 2, 0.05)}
           ${T.group === 'decor' ? slider('ed-rot', 'Поворот, °', it.rot ?? 0, 0, 359, 1) + rotBtns : ''}
-          <p class="ed-hint">Тяните, чтобы передвинуть.</p>
+          ${moveBtns('объект')}
+          <p class="ed-hint">Или тяните сам объект на плане.</p>
         </div>`;
     }
     if (sel.kind === 'house') {
       return `<div class="ed-props-head"><strong>Дом</strong></div>
-        <div class="ed-grid">${slider('ed-rot', 'Поворот, °', placeRO().rot, 0, 359, 1)}${rotBtns}
-        <p class="ed-hint">Тяните дом мышью или пальцем, чтобы передвинуть.</p></div>`;
+        <div class="ed-grid">${slider('ed-rot', 'Поворот, °', placeRO().rot, 0, 359, 1)}${rotBtns}${moveBtns('дом')}
+        <p class="ed-hint">Или тяните сам дом на плане мышью или пальцем.</p></div>`;
     }
     if (sel.kind === 'bld') {
       const b = sel.b;
@@ -642,6 +694,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${[['flat', 'Плоская'], ['shed', 'Односкатная'], ['gable', 'Двускатная']].map(([v, n]) => `<option value="${v}" ${(b.roof ?? 'shed') === v ? 'selected' : ''}>${n}</option>`).join('')}
           </select></label>
           ${slider('ed-rot', 'Поворот, °', b.rot ?? 0, 0, 359, 1)}${rotBtns}
+          ${moveBtns('постройку')}
           <div class="ed-btnrow"><button type="button" id="ed-adddoor">Добавить дверь</button></div>
           <p class="ed-hint">Двери постройки тянутся вдоль стен; нажмите на дверь, чтобы изменить размер или удалить.</p>
         </div>`;
@@ -678,7 +731,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${Object.entries(AREA_KINDS).map(([v, K]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${K.name}</option>`).join('')}
           </select></label>
           ${rot15}
-          <p class="ed-hint">Тяните, чтобы передвинуть; кружки на углах меняют форму.</p>
+          ${moveBtns('покрытие')}
+          <p class="ed-hint">Или тяните само покрытие на плане; кружки на его углах меняют форму.</p>
         </div>`;
     }
     if (sel.kind === 'corner') {
@@ -690,6 +744,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
 
   function sitePropsBind(on) {
     const btn = (id, fn) => props.querySelector('#' + id)?.addEventListener('click', () => { begin(); fn(); commit(); });
+    props.querySelectorAll('[data-nudge]').forEach(b => b.addEventListener('click', () => {
+      const [dx, dy] = b.dataset.nudge.split(',').map(Number);
+      begin(); nudge(dx * nudgeStep, dy * nudgeStep); commit();
+    }));
+    props.querySelector('#ed-nstep')?.addEventListener('change', e => { nudgeStep = parseFloat(e.target.value) || 0.5; });
     props.querySelectorAll('[data-pal]').forEach(b => b.addEventListener('click', () => {
       palette[tool] = b.dataset.pal;
       propsKey = null;
@@ -937,6 +996,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     } else if (drag.kind === 'pan') {
       const k = drag.view0.w / svg.getBoundingClientRect().width;
       view = { ...drag.view0, x: drag.view0.x - (ev.clientX - drag.start[0]) * k, y: drag.view0.y - (ev.clientY - drag.start[1]) * k };
+      fitted = false;
     } else if (drag.kind.startsWith('s-')) {
       siteMove(p);
     } else if (drag.kind === 'wall') {
@@ -1287,7 +1347,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           <label class="ed-field" for="ed-fc"><span>Цвет</span><input id="ed-fc" type="color" value="${it.color ?? T.fill}"></label>
           ${slider('ed-frot', 'Поворот, °', it.rot ?? 0, 0, 359, 1)}
           <div class="ed-btnrow"><button type="button" id="ed-frl">↺ 90°</button><button type="button" id="ed-frr">↻ 90°</button></div>
-          <p class="ed-hint">Тяните, чтобы передвинуть. Толстая линия — лицевая сторона.</p>
+          <div class="ed-move"><span>Сдвинуть:</span>
+            <button type="button" data-fnudge="-1,0" aria-label="Влево">←</button><button type="button" data-fnudge="0,-1" aria-label="Вверх">↑</button>
+            <button type="button" data-fnudge="0,1" aria-label="Вниз">↓</button><button type="button" data-fnudge="1,0" aria-label="Вправо">→</button> <span>на 10 см</span></div>
+          <p class="ed-hint">Или тяните сам предмет на плане. Толстая линия — лицевая сторона.</p>
         </div>`;
     }
     props.innerHTML = html;
@@ -1394,6 +1457,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-fc', el => { it.color = el.value; });
       on('ed-frot', el => setRot(parseFloat(el.value) || 0));
       for (const [id, dv] of [['ed-frl', -90], ['ed-frr', 90]]) props.querySelector('#' + id)?.addEventListener('click', () => { begin(); setRot((it.rot ?? 0) + dv); commit(); });
+      props.querySelectorAll('[data-fnudge]').forEach(b => b.addEventListener('click', () => {
+        const [dx, dy] = b.dataset.fnudge.split(',').map(Number);
+        begin(); it.at = [r2(it.at[0] + dx * 0.1), r2(it.at[1] + dy * 0.1)]; commit();
+      }));
     }
     props.querySelector('#ed-pal')?.addEventListener('change', e => { palette.furniture = e.target.value; });
     props.querySelector('#ed-place-center')?.addEventListener('click', () => {
