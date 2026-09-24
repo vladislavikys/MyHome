@@ -4,6 +4,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { computeRooms } from './rooms.js';
 import { createEditor } from './editor.js';
 import { openStore, downloadJson } from './store.js';
+import { createWalk } from './walk.js';
 
 // Координаты плана [x, y] (метры) переводятся в 3D как (x, высота, y).
 // Высоты — абсолютные отметки, 0.000 = чистый пол 1-го этажа.
@@ -45,6 +46,7 @@ const ground = new THREE.Mesh(
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
+ground.userData.walkable = true;
 scene.add(ground);
 
 const glassMat = new THREE.MeshStandardMaterial({
@@ -144,6 +146,7 @@ function buildWall(wall, openings, floor, defaults) {
     if (b - a < 1e-3 || y3 - y0 < 1e-3) return;
     const m = box(b - a, y3 - y0, isGlass ? 0.03 : t, mat);
     if (isGlass) m.castShadow = false;
+    m.userData.collide = true;
     m.position.set((a + b) / 2, (y0 + y3) / 2, 0);
     g.add(m);
   };
@@ -176,6 +179,7 @@ function slab(outline, holes, top, depth, mat) {
   const m = mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), mat);
   m.rotation.x = -Math.PI / 2;
   m.position.y = top - depth;
+  m.userData.walkable = true;
   return m;
 }
 
@@ -200,6 +204,7 @@ function regionMesh(runs, h, color) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.computeVertexNormals();
   const m = mesh(geo, material(color, null, { side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }), false);
+  m.userData.walkable = true;
   return m;
 }
 
@@ -250,7 +255,10 @@ function prism(s) {
     [bx0, b.h, by0], [bx1, b.h, by0], [bx1, b.h, by1], [bx0, b.h, by1],
     [tx0, t.h, ty0], [tx1, t.h, ty0], [tx1, t.h, ty1], [tx0, t.h, ty1],
   ]);
-  return mesh(geo, material(s.color ?? '#999999', s.clip, { side: THREE.DoubleSide }));
+  const m = mesh(geo, material(s.color ?? '#999999', s.clip, { side: THREE.DoubleSide }));
+  m.userData.collide = true;
+  m.userData.walkable = true;
+  return m;
 }
 
 // Прямой марш вдоль оси y плана.
@@ -262,6 +270,7 @@ function stairs(s) {
   const mat = material(s.color ?? '#b08a5a');
   for (let i = 0; i < n; i++) {
     const m = box(x1 - x0, rise * (i + 1), Math.abs(run), mat);
+    m.userData.walkable = true;
     m.position.set((x0 + x1) / 2, h0 + (rise * (i + 1)) / 2, ya + run * (i + 0.5));
     g.add(m);
   }
@@ -307,6 +316,8 @@ const ui = {
 };
 
 let floorGroups = [];
+let colliders = [];
+let walkables = [];
 const roofGroup = new THREE.Group();
 scene.add(roofGroup);
 const bounds = new THREE.Box3();
@@ -351,6 +362,13 @@ function build(house) {
   bounds.makeEmpty();
   floorGroups.forEach(g => bounds.expandByObject(g));
   bounds.expandByObject(roofGroup);
+  colliders = [];
+  walkables = [ground];
+  for (const g of floorGroups) g.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.userData.collide) colliders.push(o);
+    if (o.userData.walkable) walkables.push(o);
+  });
   applyVisibility();
 }
 
@@ -389,8 +407,38 @@ function resize() {
 new ResizeObserver(() => { resize(); editor.resize(); }).observe(app);
 window.addEventListener('resize', resize);
 
+const walkUi = {
+  noclip: document.getElementById('noclip'),
+  exitWalk: document.getElementById('exit-walk'),
+  joy: document.getElementById('joy'),
+  flyUp: document.getElementById('fly-up'),
+  flyDown: document.getElementById('fly-down'),
+};
+// Видимые объекты — только они участвуют в столкновениях.
+const visibleOnly = list => list.filter(o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; });
+scene.add(camera); // чтобы свет, прикреплённый к камере, работал
+const walk = createWalk({
+  camera, dom: renderer.domElement, ui: walkUi,
+  getColliders: () => visibleOnly(colliders),
+  getWalkables: () => visibleOnly(walkables),
+});
+document.getElementById('walk').onclick = () => {
+  controls.enabled = false;
+  ui.floors.value = floorGroups.length - 1;
+  applyVisibility();
+  walk.enter();
+};
+walkUi.exitWalk.onclick = () => {
+  walk.exit();
+  controls.enabled = true;
+  view('3d');
+};
+
+const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
-  controls.update();
+  const dt = clock.getDelta();
+  if (walk.active) walk.update(dt);
+  else controls.update();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 });
@@ -503,4 +551,4 @@ load().catch(e => {
 });
 
 // Для отладки и скриншотов из консоли.
-window.viewer = { camera, controls, view, applyVisibility, ui, editor, get house() { return house; } };
+window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, get house() { return house; } };

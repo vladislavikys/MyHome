@@ -107,6 +107,40 @@
       padding: 2px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none;
     }
 
+    /* ---------- прогулка ---------- */
+    #walkbar, #joy, #fly-buttons { display: none; }
+    body.walking #panel { display: none; }
+    body.walking #walkbar {
+      display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: center;
+      position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+      width: max-content; max-width: calc(100% - 24px); z-index: 2;
+      background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line);
+      border-radius: 10px; padding: 8px 12px;
+    }
+    .walk-hint { color: var(--muted); font-size: 12px; }
+    .walk-hint-touch { display: none; }
+    body.walking #joy {
+      position: absolute; left: 20px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2;
+      width: 120px; height: 120px; border-radius: 50%; touch-action: none;
+      background: color-mix(in srgb, var(--surface) 45%, transparent); border: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+    }
+    #joy span {
+      position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%;
+      background: color-mix(in srgb, var(--surface) 90%, transparent); border: 2px solid var(--accent); pointer-events: none;
+    }
+    body.walking:has(#noclip:checked) #fly-buttons {
+      display: grid; gap: 8px; position: absolute; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2;
+    }
+    #fly-buttons button { width: 56px; height: 56px; border-radius: 50%; font-size: 18px; touch-action: none; }
+    @media (hover: hover) and (pointer: fine) {
+      body.walking #joy { display: none; }
+      body.walking:has(#noclip:checked) #fly-buttons { display: none; }
+    }
+    @media (pointer: coarse) {
+      .walk-hint-keys { display: none; }
+      .walk-hint-touch { display: inline; }
+    }
+
     /* ---------- редактор ---------- */
     #editor {
       position: fixed; top: 0; right: 0; bottom: 0; width: var(--panel-w);
@@ -203,9 +237,21 @@
       <div class="row">
         <button type="button" id="top">Вид сверху</button>
         <button type="button" id="reset">3D вид</button>
+        <button type="button" id="walk">Прогулка</button>
         <button type="button" id="edit" aria-pressed="false">Редактировать план</button>
       </div>
       <div id="error"></div>
+    </div>
+    <div id="walkbar" role="toolbar" aria-label="Прогулка">
+      <label><input type="checkbox" id="noclip"> Сквозь стены (полёт)</label>
+      <span class="walk-hint walk-hint-keys">WASD — идти · тянуть мышью — смотреть · Shift — быстрее · Space / C — вверх / вниз в полёте · Esc — выход</span>
+      <span class="walk-hint walk-hint-touch">Джойстик — идти · свайп по экрану — смотреть</span>
+      <button type="button" id="exit-walk">Выйти</button>
+    </div>
+    <div id="joy" aria-label="Джойстик движения"><span></span></div>
+    <div id="fly-buttons">
+      <button type="button" id="fly-up" aria-label="Вверх">▲</button>
+      <button type="button" id="fly-down" aria-label="Вниз">▼</button>
     </div>
   </div>
   <div id="editor"></div>
