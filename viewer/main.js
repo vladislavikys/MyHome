@@ -14,6 +14,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { textureSet, skyTexture, doorTextures, boxUVs } from './looks.js';
+import { sunPosition, localToUtc, sunTimes, fmtTime } from './sun.js';
 import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
 import { landscapeMats, buildArea, buildItem } from './landscape.js';
 import { lawnMaterial, grassField, grassUniforms } from './grass.js';
@@ -64,7 +65,7 @@ let highQuality = !coarse;
 
 // Солнце и небо: небо — HDR-карта окружения (рассеянный свет и отражения), солнце — направленный свет с тенями.
 const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize();
-const sky = skyTexture(SUN_DIR);
+let sky = skyTexture(SUN_DIR);
 scene.background = sky;
 scene.environment = sky;
 scene.environmentIntensity = 0.9;
@@ -77,8 +78,75 @@ sun.shadow.mapSize.set(4096, 4096);
 sun.shadow.bias = -0.0002;
 sun.shadow.normalBias = 0.02;
 sun.shadow.radius = 3;
-Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 90 });
+Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 130 });
 scene.add(sun);
+
+// ---------- солнце по координатам, дате и времени суток ----------
+// Молодечно; север — по генплану: −y плана (улица с востока, +x). geo.north поворачивает север (°, по часовой).
+const GEO_DEFAULT = { lat: 54.3136, lon: 26.8517, tz: 3, north: 0 };
+const sunUi = {
+  date: document.getElementById('sun-date'), time: document.getElementById('sun-time'),
+  clock: document.getElementById('sun-clock'), play: document.getElementById('sun-play'), info: document.getElementById('sun-info'),
+};
+const sunState = (() => {
+  const today = new Date(Date.now() + GEO_DEFAULT.tz * 3600e3).toISOString().slice(0, 10);
+  try { const s = JSON.parse(localStorage.getItem('myhome.sun') ?? 'null'); if (s?.date) return s; } catch { /* нет хранилища */ }
+  return { date: today, hours: 13 };
+})();
+let sunPlaying = false, sunQueued = false;
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+function applySun() {
+  sunQueued = false;
+  const g = { ...GEO_DEFAULT, ...(house?.geo ?? {}) };
+  const { el, az } = sunPosition(localToUtc(sunState.date, sunState.hours, g.tz), g.lat, g.lon);
+  const Y = new THREE.Vector3(0, 1, 0);
+  const north = new THREE.Vector3(0, 0, -1).applyAxisAngle(Y, -THREE.MathUtils.degToRad(g.north));
+  const east = north.clone().applyAxisAngle(Y, -Math.PI / 2);
+  const dirOf = (elD, azD) => {
+    const e = THREE.MathUtils.degToRad(elD), a = THREE.MathUtils.degToRad(azD);
+    return east.clone().multiplyScalar(Math.sin(a) * Math.cos(e)).add(north.clone().multiplyScalar(Math.cos(a) * Math.cos(e))).add(new THREE.Vector3(0, Math.sin(e), 0));
+  };
+  const dir = dirOf(el, az);
+  // небо и отражения
+  const old = sky;
+  sky = skyTexture(dir);
+  scene.background = sky;
+  scene.environment = sky;
+  old.dispose();
+  scene.environmentIntensity = 0.35 + 0.55 * smooth(-8, 20, el);
+  // днём — солнце (тёплое у горизонта), ночью — слабый холодный «лунный» свет
+  const w = smooth(-3, 4, el);
+  const lightDir = w > 0.05 ? dirOf(Math.max(el, 1.5), az) : dirOf(35, az + 180);
+  sun.position.copy(sun.target.position).addScaledVector(lightDir, 60);
+  sun.intensity = w * 3.3 * (0.35 + 0.65 * smooth(0, 15, el)) + (1 - w) * 0.55;
+  sun.color.set(w > 0.05 ? '#ff9a55' : '#8fa6d8');
+  if (w > 0.05) sun.color.lerp(new THREE.Color('#fff1dc'), smooth(2, 25, el));
+  const hh = sunState.hours;
+  sunUi.clock.textContent = fmtTime(hh);
+  const st = sunTimes(sunState.date, g.lat, g.lon, g.tz);
+  const side = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'][Math.round(az / 45) % 8];
+  sunUi.info.textContent = el > -0.8
+    ? `Солнце: высота ${Math.round(el)}°, ${side} (азимут ${Math.round(az)}°) · восход ${fmtTime(st.rise)} · закат ${fmtTime(st.set)}`
+    : `Солнце за горизонтом · восход ${fmtTime(st.rise)} · закат ${fmtTime(st.set)}`;
+  try { localStorage.setItem('myhome.sun', JSON.stringify(sunState)); } catch { /* нет хранилища */ }
+  photo?.sceneChanged?.();
+}
+function queueSun() { if (!sunQueued) { sunQueued = true; requestAnimationFrame(applySun); } }
+sunUi.date.value = sunState.date;
+sunUi.time.value = sunState.hours;
+sunUi.date.addEventListener('change', () => { if (sunUi.date.value) { sunState.date = sunUi.date.value; queueSun(); } });
+sunUi.time.addEventListener('input', () => { sunState.hours = parseFloat(sunUi.time.value); queueSun(); });
+sunUi.play.addEventListener('click', () => {
+  sunPlaying = !sunPlaying;
+  sunUi.play.textContent = sunPlaying ? '❚❚' : '▶';
+  sunUi.play.setAttribute('aria-label', sunPlaying ? 'Остановить смену времени суток' : 'Прокрутить сутки');
+});
+function tickSun(dt) {
+  if (!sunPlaying) return;
+  sunState.hours = (sunState.hours + dt * 1.2) % 24;   // 1,2 часа за секунду
+  sunUi.time.value = sunState.hours;
+  queueSun();
+}
 
 const grassTex = textureSet('grass');
 const groundGeo = new THREE.PlaneGeometry(300, 300);
@@ -1364,6 +1432,7 @@ document.getElementById('door-toggle').onclick = () => toggleNearestDoor();
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+  tickSun(dt);
   grassUniforms.uTime.value = clock.elapsedTime;
   animateDoors(dt);
   if (photo.active) { photo.update(); return; }
@@ -1484,6 +1553,7 @@ async function load() {
   editor.setHouse(house);
   renderVariants();
   view('3d');
+  applySun();
 
   // Сохранённая версия появляется позже, когда хранилище ответит.
   store = await openStore();

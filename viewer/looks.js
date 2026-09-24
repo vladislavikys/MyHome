@@ -242,8 +242,17 @@ export function textureSet(kind) {
 export function skyTexture(sunDir) {
   const w = 512, h = 256;
   const data = new Float32Array(w * h * 4);
-  const zen = [0.18, 0.36, 0.78], hor = [0.78, 0.86, 0.95], gnd = [0.32, 0.31, 0.28];
   const sd = sunDir.clone().normalize();
+  // день → сумерки → ночь по высоте солнца (sd.y = sin высоты)
+  const mixc = (a, b, k) => a.map((x, i) => x + (b[i] - x) * k);
+  const sm = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+  const day = sm(-0.05, 0.3, sd.y), dusk = sm(-0.18, 0.02, sd.y) * (1 - sm(0.05, 0.3, sd.y));
+  const nightZen = [0.02, 0.032, 0.075], nightHor = [0.05, 0.065, 0.11];
+  let zen = mixc(nightZen, [0.18, 0.36, 0.78], day), hor = mixc(nightHor, [0.78, 0.86, 0.95], day);
+  hor = mixc(hor, [1.1, 0.55, 0.28], dusk * 0.8);
+  zen = mixc(zen, [0.22, 0.25, 0.45], dusk * 0.5);
+  const gnd = mixc([0.03, 0.03, 0.035], [0.32, 0.31, 0.28], day);
+  const glowK = sm(-0.12, 0.02, sd.y);
   for (let j = 0; j < h; j++) {
     const lat = (0.5 - (j + 0.5) / h) * Math.PI;           // +π/2 вверх
     for (let i = 0; i < w; i++) {
@@ -258,11 +267,12 @@ export function skyTexture(sunDir) {
         c = hor.map((x, k) => x + (gnd[k] - x) * t);
       }
       const cos = Math.max(0, d.dot(sd));
-      const glow = Math.pow(cos, 64) * 6 + Math.pow(cos, 8) * 0.35;
+      // ореол солнца; у горизонта — тёплый и широкий
+      const glow = (Math.pow(cos, 64) * 6 + Math.pow(cos, 8) * (0.35 + dusk * 0.9)) * glowK;
       const k = (j * w + i) * 4;
       data[k] = (c[0] + glow) * 1.1;
-      data[k + 1] = (c[1] + glow * 0.95) * 1.1;
-      data[k + 2] = (c[2] + glow * 0.85) * 1.1;
+      data[k + 1] = (c[1] + glow * (0.95 - dusk * 0.35)) * 1.1;
+      data[k + 2] = (c[2] + glow * (0.85 - dusk * 0.5)) * 1.1;
       data[k + 3] = 1;
     }
   }

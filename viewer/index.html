@@ -248,6 +248,11 @@
     .g-area { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 1px; vector-effect: non-scaling-stroke; opacity: .75; }
     .g-item { stroke: color-mix(in srgb, var(--ink) 45%, transparent); }
     .g-plant { opacity: .7; }
+    .sun-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .sun-row input[type="range"] { flex: 1 1 120px; min-width: 100px; accent-color: var(--accent); }
+    .sun-row input[type="date"] { font: inherit; padding: 2px 4px; }
+    .sun-clock { font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 3.2em; }
+    .sun-info { font-size: 12px; color: var(--muted); max-width: 42ch; }
     .ed-palette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .ed-palette button { display: inline-flex; align-items: center; gap: 6px; }
     .ed-palette button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -297,6 +302,13 @@
         <label>Этажи: <select id="floors"></select></label>
       </div>
       <div class="row" id="variants"></div>
+      <div class="row sun-row">
+        <label>Солнце: <input type="date" id="sun-date" aria-label="Дата"></label>
+        <input type="range" id="sun-time" min="0" max="24" step="0.0833" aria-label="Время суток">
+        <span id="sun-clock" class="sun-clock">13:00</span>
+        <button type="button" id="sun-play" aria-label="Прокрутить сутки">▶</button>
+      </div>
+      <div class="row sun-info" id="sun-info"></div>
       <div class="row"><label>Качество: <select id="quality"><option value="high">Высокое</option><option value="fast">Быстрое</option></select></label></div>
       <div class="row">
         <button type="button" id="top">Вид сверху</button>
