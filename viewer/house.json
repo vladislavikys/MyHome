@@ -1,6 +1,6 @@
 {
   "name": "Жилой дом 15,6 × 9,1 м (мансардный)",
-  "revision": 7,
+  "revision": 8,
   "source": "Проект 23/21-АС: планы М1:100, фасады, разрез 1-1, план кровли",
   "units": "m",
   "note": "x — вдоль осей 1→5 (ось 1 = 0), y — от оси В (0) к осям Б (8.1) и А (9.1). Оси — по наружным граням стен.",
@@ -488,7 +488,7 @@
   },
   "site": {
     "note": "Расстановка владельца (редактор «Участок»).",
-    "revision": 1,
+    "revision": 2,
     "boundary": [
       [-8.5, -6],
       [26, -6],
@@ -523,6 +523,12 @@
             "color": "#4b4f4c",
             "height": 2.4,
             "width": 3
+          },
+          {
+            "at": [8.6, 1.58],
+            "width": 0.9,
+            "height": 2.0,
+            "color": "#4b4f4c"
           }
         ],
         "height": 3.2,
@@ -560,7 +566,8 @@
         "roofColor": "#5b3a29",
         "rot": 90,
         "wallColor": "#c9a27a",
-        "wallTexture": "soffit"
+        "wallTexture": "soffit",
+        "ridge": "x"
       },
       {
         "name": "Пристройка к бане",
@@ -576,7 +583,8 @@
         "rise": 1.0,
         "wallColor": "#c9a27a",
         "wallTexture": "soffit",
-        "roofColor": "#5b3a29"
+        "roofColor": "#5b3a29",
+        "ridge": "x"
       },
       {
         "doors": [

@@ -1006,7 +1006,7 @@ function outbuilding(b) {
   const o = b.overhang ?? 0.4;
   if (b.roof === 'gable') {
     // конёк вдоль длинной стороны
-    const alongX = w >= dpt;
+    const alongX = b.ridge ? b.ridge === 'x' : w >= dpt - 1e-6;   // ridge: 'x' | 'y' — явное направление конька
     const span = (alongX ? dpt : w) / 2 + o, len = (alongX ? w : dpt) + 2 * o, rise = b.rise ?? span * 0.7;
     for (const side of [-1, 1]) {
       const slope = Math.hypot(span, rise);
@@ -1046,12 +1046,19 @@ function outbuilding(b) {
     panel.rotation.x = Math.atan2(drop, dpt + 2 * o) * (b.slopeTo === 'north' ? -1 : 1);
     g.add(panel);
   }
+  const doorFrame = pbr('#3a2f27', null, { roughness: 0.6 }), doorHandle = pbr('#1b1b1b', null, { roughness: 0.35, metalness: 0.8 });
   for (const d of b.doors ?? []) {
-    const leaf = box(d.width, d.height, 0.06, pbr(d.color ?? '#4a4038', null, { roughness: 0.5, metalness: 0.4 }));
+    const dg = new THREE.Group();
     const [dx, dy] = d.at;
-    leaf.position.set(dx, d.height / 2, dy);
-    if (d.axis === 'y') leaf.rotation.y = Math.PI / 2;
-    g.add(leaf);
+    dg.position.set(dx, 0, dy);
+    if (d.axis === 'y') dg.rotation.y = Math.PI / 2;
+    const leaf = box(d.width - 0.08, d.height - 0.04, 0.05, pbr(d.color ?? '#4a4038', d.width > 1.8 ? 'roof' : null, { roughness: 0.5, metalness: d.width > 1.8 ? 0.5 : 0.2 }));
+    leaf.position.set(0, (d.height - 0.04) / 2, 0);
+    dg.add(leaf);
+    const top = box(d.width + 0.08, 0.06, 0.08, doorFrame); top.position.set(0, d.height, 0); dg.add(top);
+    for (const s of [-1, 1]) { const st = box(0.06, d.height, 0.08, doorFrame); st.position.set(s * (d.width / 2 - 0.01), d.height / 2, 0); dg.add(st); }
+    if (d.width <= 1.8) for (const s of [-1, 1]) { const h = box(0.12, 0.025, 0.03, doorHandle); h.position.set(d.width / 2 - 0.16, 1.0, s * 0.045); dg.add(h); }
+    g.add(dg);
   }
   return g;
 }

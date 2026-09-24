@@ -339,6 +339,22 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     return { name: K.name, kind, poly };
   }
 
+  // Двери построек: в неповёрнутых координатах постройки, на грани одной из стен.
+  const doorSeg = (b, d) => {
+    const hw = d.width / 2, [x, y] = d.at, c = bldCenter(b);
+    return (d.axis === 'y' ? [[x, y - hw], [x, y + hw]] : [[x - hw, y], [x + hw, y]]).map(q => rotP(q, b.rot ?? 0, c));
+  };
+  function placeDoor(b, d, p) {
+    const c = bldCenter(b), q = rotP(p, -(b.rot ?? 0), c);
+    const [x0, y0, x1, y1] = b.rect, hw = d.width / 2;
+    const cx = Math.max(x0 + hw, Math.min(x1 - hw, q[0])), cy = Math.max(y0 + hw, Math.min(y1 - hw, q[1]));
+    const sides = [[Math.abs(q[1] - y0), [r2(snap(cx)), r2(y0 - 0.03)], 'x'], [Math.abs(q[1] - y1), [r2(snap(cx)), r2(y1 + 0.03)], 'x'],
+      [Math.abs(q[0] - x0), [r2(x0 - 0.03), r2(snap(cy))], 'y'], [Math.abs(q[0] - x1), [r2(x1 + 0.03), r2(snap(cy))], 'y']];
+    const [, at, axis] = sides.sort((a, b2) => a[0] - b2[0])[0];
+    d.at = at;
+    if (axis === 'y') d.axis = 'y'; else delete d.axis;
+  }
+
   function setHouseRot(deg) {
     const pl = place(), c = houseCenter();
     const S = toSite(c);
@@ -364,6 +380,13 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       if (dist(p, g.at) < Math.max(g.width / 2, tol * 1.5)) {
         const e = nearestEdge(g.at);
         if (!e || projectOnWall({ from: g.at, to: [g.at[0] + e.pr.g.u[0], g.at[1] + e.pr.g.u[1]] }, p).d < 0.8) return { kind: 'gate', i };
+      }
+    }
+    if (sel?.kind === 'bld' || sel?.kind === 'bdoor') {
+      const b = sel.b;
+      for (const door of b.doors ?? []) {
+        const [a, c] = doorSeg(b, door);
+        if (projectOnWall({ from: a, to: c }, p).d < Math.max(tol, 0.25)) return { kind: 'bdoor', b, door };
       }
     }
     for (const b of [...(s.buildings ?? [])].reverse()) if (insidePoly(p, bldPoly(b))) return { kind: 'bld', b };
@@ -440,6 +463,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     } else if (h.kind === 'house') {
       sel = h;
       drag = { kind: 's-house', p0: p, at0: [...place().at] };
+    } else if (h.kind === 'bdoor') {
+      sel = h;
+      drag = { kind: 's-bdoor', b: h.b, door: h.door };
     } else if (h.kind === 'pvert') {
       drag = { kind: 's-pvert', path: h.path, i: h.i };
     } else if (h.kind === 'item') {
@@ -462,6 +488,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       place().at = add(drag.at0, d);
     } else if (drag.kind === 's-path') {
       drag.path.poly = drag.poly0.map(q => add(q, d));
+    } else if (drag.kind === 's-bdoor') {
+      placeDoor(drag.b, drag.door, p);
     } else if (drag.kind === 's-item') {
       drag.it.at = add(drag.at0, d);
     } else if (drag.kind === 's-pvert') {
@@ -482,6 +510,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     else if (sel.kind === 'gate') s.gates = s.gates.filter((g, i) => i !== sel.i);
     else if (sel.kind === 'path') s.paths = s.paths.filter(p => p !== sel.path);
     else if (sel.kind === 'item') s.items = s.items.filter(it => it !== sel.it);
+    else if (sel.kind === 'bdoor') sel.b.doors = sel.b.doors.filter(d => d !== sel.door);
     else if (sel.kind === 'corner' && s.boundary.length > 3) s.boundary.splice(sel.i, 1);
     else return false;
     return true;
@@ -517,8 +546,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       out.push(`<polygon class="g-bld" points="${pts(bldPoly(b))}" stroke-width="${2 * k}"/>`);
       const c = bldCenter(b);
       for (const d of b.doors ?? []) {
-        const hw = d.width / 2, [x, y] = d.at;
-        const [p0, p1] = (d.axis === 'y' ? [[x, y - hw], [x, y + hw]] : [[x - hw, y], [x + hw, y]]).map(q => rotP(q, b.rot ?? 0, c));
+        const [p0, p1] = doorSeg(b, d);
         out.push(`<line class="g-op g-door" x1="${p0[0]}" y1="${p0[1]}" x2="${p1[0]}" y2="${p1[1]}" stroke-width="${5 * k}"/>`);
       }
       label(c, b.name ?? 'Постройка');
@@ -540,6 +568,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     const selPoly = sel?.kind === 'bld' ? bldPoly(sel.b) : sel?.kind === 'house' ? hp : sel?.kind === 'path' ? sel.path.poly
       : sel?.kind === 'item' && ITEM_TYPES[sel.it.type]?.rect ? itemRect(sel.it) : null;
     if (selPoly) out.push(`<polygon class="g-sel-rect" points="${pts(selPoly)}" stroke-width="${3 * k}"/>`);
+    if (sel?.kind === 'bdoor') {
+      const [a, c] = doorSeg(sel.b, sel.door);
+      out.push(`<line class="g-sel" x1="${a[0]}" y1="${a[1]}" x2="${c[0]}" y2="${c[1]}" stroke-width="${14 * k}"/>`);
+    }
     if (sel?.kind === 'item' && !ITEM_TYPES[sel.it.type]?.rect) out.push(`<circle class="g-sel-rect" cx="${sel.it.at[0]}" cy="${sel.it.at[1]}" r="${Math.max(itemR(sel.it), 5 * k)}" stroke-width="${3 * k}"/>`);
     if (sel?.kind === 'path') for (const c of sel.path.poly) out.push(`<circle class="g-handle" cx="${c[0]}" cy="${c[1]}" r="${6 * k}" stroke-width="${2 * k}"/>`);
     if (sel?.kind === 'gate' && s.gates?.[sel.i]) {
@@ -592,6 +624,18 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${[['flat', 'Плоская'], ['shed', 'Односкатная'], ['gable', 'Двускатная']].map(([v, n]) => `<option value="${v}" ${(b.roof ?? 'shed') === v ? 'selected' : ''}>${n}</option>`).join('')}
           </select></label>
           ${slider('ed-rot', 'Поворот, °', b.rot ?? 0, 0, 359, 1)}${rotBtns}
+          <div class="ed-btnrow"><button type="button" id="ed-adddoor">Добавить дверь</button></div>
+          <p class="ed-hint">Двери постройки тянутся вдоль стен; нажмите на дверь, чтобы изменить размер или удалить.</p>
+        </div>`;
+    }
+    if (sel.kind === 'bdoor') {
+      const d = sel.door;
+      return `<div class="ed-props-head"><strong>Дверь · ${sel.b.name ?? 'постройка'}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <div class="ed-grid">
+          ${slider('ed-dw', 'Ширина, м', d.width, 0.6, 4, 0.05)}
+          ${slider('ed-dh', 'Высота, м', d.height, 1.6, 3, 0.05)}
+          <label class="ed-field" for="ed-dc"><span>Цвет</span><input id="ed-dc" type="color" value="${d.color ?? '#4a4038'}"></label>
+          <p class="ed-hint">Тяните дверь вдоль стен постройки.</p>
         </div>`;
     }
     if (sel.kind === 'gate') {
@@ -641,6 +685,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       btn('ed-rr', () => rotatePath(path, 90));
       btn('ed-rl15', () => rotatePath(path, -15));
       btn('ed-rr15', () => rotatePath(path, 15));
+    } else if (sel?.kind === 'bdoor') {
+      const d = sel.door, b = sel.b;
+      on('ed-dw', el => { const v = parseFloat(el.value); if (v > 0.3) { d.width = v; placeDoor(b, d, rotP(d.at, b.rot ?? 0, bldCenter(b))); } });
+      on('ed-dh', el => { const v = parseFloat(el.value); if (v > 1) d.height = Math.min(v, (b.height ?? 2.8) - 0.1); });
+      on('ed-dc', el => { d.color = el.value; });
     } else if (sel?.kind === 'item') {
       const it = sel.it;
       const setRot = v => { it.rot = ((Math.round(v) % 360) + 360) % 360; };
@@ -662,6 +711,12 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-bname', el => { b.name = el.value; });
       on('ed-bh', el => { const v = parseFloat(el.value); if (v > 1) b.height = v; });
       on('ed-roof', el => { b.roof = el.value; });
+      btn('ed-adddoor', () => {
+        const d = { width: 0.9, height: 2.0, color: '#6e4a2f', at: [0, 0] };
+        placeDoor(b, d, rotP([bldCenter(b)[0], b.rect[3] + 1], b.rot ?? 0, bldCenter(b)));
+        (b.doors ??= []).push(d);
+        sel = { kind: 'bdoor', b, door: d };
+      });
       const resize = (w, d) => {
         const [cx, cy] = bldCenter(b), w0 = b.rect[2] - b.rect[0], d0 = b.rect[3] - b.rect[1];
         b.rect = [cx - w / 2, cy - d / 2, cx + w / 2, cy + d / 2].map(r2);
@@ -1120,7 +1175,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   // ---------- свойства ----------
   let propsKey = null;
   function renderProps() {
-    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) : '') + (sel.it ? house.site.items.indexOf(sel.it) : '') + (sel.path ? house.site.paths.indexOf(sel.path) : '') : tool + palette[tool]) : sel ? sel.kind + ':' + (sel.it ? (floor().furniture ?? []).indexOf(sel.it) : '') + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
+    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) + ':' + (sel.door ? sel.b.doors.indexOf(sel.door) : '') : '') + (sel.it ? house.site.items.indexOf(sel.it) : '') + (sel.path ? house.site.paths.indexOf(sel.path) : '') : tool + palette[tool]) : sel ? sel.kind + ':' + (sel.it ? (floor().furniture ?? []).indexOf(sel.it) : '') + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
     // не перерисовываем поля, пока пользователь в них печатает
     if (key === propsKey && props.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') {
       refreshReadouts();
