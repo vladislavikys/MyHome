@@ -541,6 +541,18 @@ function buildFloor(floor, defaults) {
     }
   }
   roomLinings(g, floor, defaults, regions);
+  // столбы (колонны): от пола до потолка этажа; floor.columns = [{ at, w, d, round, height? }]
+  for (const c of floor.columns ?? []) {
+    const H = c.height ?? defaults.ceilH ?? floor.height;
+    const mat = material(c.color ?? defaults.wallColor, null, { kind: 'plaster' });
+    const m = c.round
+      ? mesh(new THREE.CylinderGeometry((c.w ?? 0.3) / 2, (c.w ?? 0.3) / 2, H, 28), mat)
+      : box(c.w ?? 0.3, H, c.d ?? 0.3, mat);
+    m.position.set(c.at[0], floor.elevation + H / 2, c.at[1]);
+    m.rotation.y = -THREE.MathUtils.degToRad(c.rot ?? 0);
+    m.userData.collide = true;
+    g.add(m);
+  }
   const FM = furnitureMats();
   for (const it of floor.furniture ?? []) {
     const m = buildFurniture(it, FM);
@@ -995,7 +1007,9 @@ function build(house) {
   }
 
   house.floors.forEach((f, i) => {
-    const g = buildFloor(f, { ...defaults, facade: house.facade && { ...house.facade, floorIdx: i } });
+    const up = house.floors[i + 1];
+    const ceilH = up ? up.elevation - (up.slab ?? 0.2) - f.elevation : f.height;
+    const g = buildFloor(f, { ...defaults, ceilH, facade: house.facade && { ...house.facade, floorIdx: i } });
     floorGroups.push(g);
     scene.add(g);
   });

@@ -17,6 +17,7 @@ const TOOLS = [
   ['door', 'Дверь', 'Нажмите на стену там, где нужна дверь.'],
   ['skylight', 'Мансардное', 'Нажмите на скат крыши (только верхний этаж), чтобы добавить мансардное окно.'],
   ['room', 'Подпись', 'Нажмите внутри помещения, чтобы подписать его. Площадь посчитается по стенам.'],
+  ['column', 'Столб', 'Нажмите, где поставить столб. Он идёт от пола до потолка этажа; сечение и точное место — в свойствах.'],
   ['furniture', 'Мебель', 'Выберите предмет и нажмите в комнате. Отделка пола и стен — нажмите на подпись комнаты.'],
 ];
 
@@ -316,6 +317,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     for (const s of skylights()) {
       const [a, b] = s.win.x, [c, d] = s.win.y;
       if (p[0] >= a && p[0] <= b && p[1] >= c && p[1] <= d) return { kind: 'skylight', ...s };
+    }
+    for (const c of floor().columns ?? []) {
+      const hw = Math.max((c.w ?? 0.3) / 2, tol), hd = Math.max((c.round ? c.w ?? 0.3 : c.d ?? 0.3) / 2, tol);
+      if (Math.abs(p[0] - c.at[0]) <= hw && Math.abs(p[1] - c.at[1]) <= hd) return { kind: 'column', col: c };
     }
     for (const [k, room] of (floor().rooms ?? []).entries()) {
       if (room.at && Math.abs(p[0] - room.at[0]) < 0.9 && Math.abs(p[1] - room.at[1]) < 0.35) return { kind: 'room', room, index: k };
@@ -859,6 +864,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       f.rooms = f.rooms.filter(r => r !== sel.room);
     } else if (sel.kind === 'furn') {
       f.furniture = f.furniture.filter(it => it !== sel.it);
+    } else if (sel.kind === 'column') {
+      f.columns = f.columns.filter(c => c !== sel.col);
     }
     sel = null;
     commit();
@@ -957,6 +964,16 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (tool === 'skylight') { addSkylight(p); return; }
     if (tool === 'room') { addRoom(p); return; }
     if (tool === 'furniture') { placeFurniture(p); return; }
+    if (tool === 'column') {
+      begin();
+      const c = { at: [r2(snap(p[0])), r2(snap(p[1]))], w: 0.3, d: 0.3 };
+      (floor().columns ??= []).push(c);
+      sel = { kind: 'column', col: c };
+      tool = 'select';
+      root.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === tool));
+      commit();
+      return;
+    }
 
     const h = hit(p);
     if (!h) {
@@ -994,6 +1011,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       drag = { kind: 'skylight', win: h.win, p0: p, x0: [...h.win.x], y0: [...h.win.y] };
     } else if (h.kind === 'furn') {
       drag = { kind: 'furn', it: h.it, p0: p, at0: [...h.it.at] };
+    } else if (h.kind === 'column') {
+      drag = { kind: 'column', col: h.col, p0: p, at0: [...h.col.at] };
     }
     render();
   });
@@ -1042,6 +1061,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       drag.o.offset = r2(Math.max(0, Math.min(pr.g.len - drag.o.width, snap(pr.t - drag.grab))));
     } else if (drag.kind === 'room') {
       drag.room.at = [r2(snap(p[0] - drag.d[0])), r2(snap(p[1] - drag.d[1]))];
+    } else if (drag.kind === 'column') {
+      drag.col.at = [r2(drag.at0[0] + snap(p[0] - drag.p0[0])), r2(drag.at0[1] + snap(p[1] - drag.p0[1]))];
+      live();
     } else if (drag.kind === 'furn') {
       drag.it.at = [r2(drag.at0[0] + snap(p[0] - drag.p0[0])), r2(drag.at0[1] + snap(p[1] - drag.p0[1]))];
       live();
@@ -1204,6 +1226,14 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       out.push(`<rect class="g-sky" x="${a}" y="${c}" width="${b - a}" height="${d - c}" stroke-width="${1.5 * k}"/>`);
     }
 
+    // столбы
+    for (const c of f.columns ?? []) {
+      const w = c.w ?? 0.3, d = c.round ? w : c.d ?? 0.3;
+      out.push(c.round
+        ? `<circle class="g-col" cx="${c.at[0]}" cy="${c.at[1]}" r="${w / 2}"/>`
+        : `<rect class="g-col" x="${c.at[0] - w / 2}" y="${c.at[1] - d / 2}" width="${w}" height="${d}"/>`);
+      if (sel?.kind === 'column' && sel.col === c) out.push(`<rect class="g-sel-rect" x="${c.at[0] - w / 2 - 4 * k}" y="${c.at[1] - d / 2 - 4 * k}" width="${w + 8 * k}" height="${d + 8 * k}" stroke-width="${3 * k}"/>`);
+    }
     // мебель
     for (const it of f.furniture ?? []) {
       const T = FURNITURE[it.type];
@@ -1278,7 +1308,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   // ---------- свойства ----------
   let propsKey = null;
   function renderProps() {
-    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) + ':' + (sel.door ? sel.b.doors.indexOf(sel.door) : '') : '') + (sel.it ? house.site.items.indexOf(sel.it) : '') + (sel.path ? house.site.paths.indexOf(sel.path) : '') : tool + palette[tool]) : sel ? sel.kind + ':' + (sel.it ? (floor().furniture ?? []).indexOf(sel.it) : '') + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
+    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) + ':' + (sel.door ? sel.b.doors.indexOf(sel.door) : '') : '') + (sel.it ? house.site.items.indexOf(sel.it) : '') + (sel.path ? house.site.paths.indexOf(sel.path) : '') : tool + palette[tool]) : sel ? sel.kind + ':' + (sel.it ? (floor().furniture ?? []).indexOf(sel.it) : '') + (sel.col ? (floor().columns ?? []).indexOf(sel.col) : '') + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
     // не перерисовываем поля, пока пользователь в них печатает
     if (key === propsKey && props.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') {
       refreshReadouts();
@@ -1380,6 +1410,23 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           <label class="ed-field" for="ed-room-wf"><span>Стены</span><select id="ed-room-wf"><option value="" ${wf ? '' : 'selected'}>Как в проекте</option>${opt(WALL_FINISHES, wf)}</select></label>
           ${wf ? `<label class="ed-field" for="ed-room-wc"><span>${wf === 'tiles' ? 'Цвет стен выше плитки' : 'Цвет стен'}</span><input id="ed-room-wc" type="color" value="${r.wallColor ?? '#efe9dc'}"></label>` : ''}
           ${wf === 'tiles' ? `<label class="ed-field" for="ed-room-tc"><span>Цвет плитки</span><input id="ed-room-tc" type="color" value="${r.tileColor ?? '#e9ecec'}"></label>${slider('ed-room-th', 'Плитка до высоты, м', r.tileHeight ?? 2.1, 0.3, 3, 0.05)}` : ''}
+        </div>`;
+    } else if (sel.kind === 'column') {
+      const c = sel.col;
+      const up = house.floors[floorIdx + 1];
+      const ceil = up ? up.elevation - (up.slab ?? 0.2) - floor().elevation : floor().height;
+      html = `<div class="ed-props-head"><strong>Столб</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <div class="ed-grid">
+          ${num('ed-cw', c.round ? 'Диаметр, м' : 'Ширина, м', c.w ?? 0.3, 0.01)}
+          ${c.round ? '' : num('ed-cd', 'Глубина, м', c.d ?? 0.3, 0.01)}
+          <label class="ed-field" for="ed-cshape"><span>Форма</span><select id="ed-cshape"><option value="sq" ${c.round ? '' : 'selected'}>Прямоугольный</option><option value="round" ${c.round ? 'selected' : ''}>Круглый</option></select></label>
+          ${num('ed-cx', 'Центр: X (от оси 1), м', c.at[0], 0.01)}
+          ${num('ed-cy', 'Центр: Y (от оси В), м', c.at[1], 0.01)}
+          <p class="ed-readout">Высота — от пола до потолка этажа: ${ceil.toFixed(2)} м</p>
+          <div class="ed-move"><span>Сдвинуть:</span>
+            <button type="button" data-cnudge="-1,0" aria-label="Влево">←</button><button type="button" data-cnudge="0,-1" aria-label="Вверх">↑</button>
+            <button type="button" data-cnudge="0,1" aria-label="Вниз">↓</button><button type="button" data-cnudge="1,0" aria-label="Вправо">→</button> <span>на 5 см</span></div>
+          <p class="ed-hint">Или тяните сам столб на плане.</p>
         </div>`;
     } else if (sel.kind === 'furn') {
       const it = sel.it, T = FURNITURE[it.type] ?? { name: 'Предмет', fill: '#cccccc' };
@@ -1498,6 +1545,17 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-room-wc', el => { r.wallColor = el.value; });
       on('ed-room-tc', el => { r.tileColor = el.value; });
       on('ed-room-th', el => { const v = parseFloat(el.value); if (v > 0.1) r.tileHeight = v; });
+    } else if (sel?.kind === 'column') {
+      const c = sel.col;
+      on('ed-cw', el => { const v = parseFloat(el.value); if (v > 0.05) c.w = v; });
+      on('ed-cd', el => { const v = parseFloat(el.value); if (v > 0.05) c.d = v; });
+      on('ed-cshape', el => { if (el.value === 'round') c.round = true; else delete c.round; propsKey = null; });
+      on('ed-cx', el => { const v = parseFloat(el.value); if (!isNaN(v)) c.at = [r2(v), c.at[1]]; });
+      on('ed-cy', el => { const v = parseFloat(el.value); if (!isNaN(v)) c.at = [c.at[0], r2(v)]; });
+      props.querySelectorAll('[data-cnudge]').forEach(b => b.addEventListener('click', () => {
+        const [dx, dy] = b.dataset.cnudge.split(',').map(Number);
+        begin(); c.at = [r2(c.at[0] + dx * 0.05), r2(c.at[1] + dy * 0.05)]; commit();
+      }));
     } else if (sel?.kind === 'furn') {
       const it = sel.it;
       const setRot = v => { it.rot = ((Math.round(v) % 360) + 360) % 360; };
