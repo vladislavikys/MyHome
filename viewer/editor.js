@@ -905,7 +905,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   function finishWall() {
     if (!draft || dist(draft.from, draft.to) < 0.2) { draft = null; render(); return; }
     begin();
-    const w = { id: uid('w'), from: draft.from, to: draft.to, thickness: 0.1, height: 2.7 };
+    // на верхнем этаже (мансарда) перегородки — до крыши: высота этажа, скаты срезают стену
+    const w = { id: uid('w'), from: draft.from, to: draft.to, thickness: 0.1, ...(isTop() ? {} : { height: 2.7 }) };
     walls().push(w);
     draft = null;
     sel = { kind: 'wall', wall: w };
