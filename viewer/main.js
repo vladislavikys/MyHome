@@ -688,7 +688,7 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {
-      await store.save(house);
+      await store.save(house, original?.revision ?? null);
       setStatus(store.kind === 'shared' ? 'Сохранено в проекте' : 'Сохранено в этом браузере');
     } catch (e) {
       setStatus(e?.code === 'invalid_argument' || e?.code === 'read_only'
@@ -771,18 +771,25 @@ async function load() {
   setStatus(store.kind === 'shared' ? 'Правки сохраняются в проекте' : 'Правки сохраняются в этом браузере');
   try {
     const saved = await store.load();
-    if (saved?.floors) {
-      house = saved;
-      // сохранённая версия без вариантов (старая) — берём их из проекта
-      if (!house.variants && original.variants) {
-        house.variants = structuredClone(original.variants);
-        applyVariant(house, 'stairs', house.variants.stairs.active);
-      }
-      if (!house.tour && original.tour) house.tour = structuredClone(original.tour);
+    if (saved?.house?.floors && saved.base === (original.revision ?? null)) {
+      // правки сделаны от текущей версии проекта — показываем их
+      house = saved.house;
       build(house);
       editor.setHouse(house, { keepView: true });
       renderVariants();
-      setStatus(store.kind === 'shared' ? 'Загружена сохранённая версия' : 'Загружена версия из этого браузера');
+      setStatus(store.kind === 'shared' ? 'Загружены ваши правки' : 'Загружены правки из этого браузера');
+    } else if (saved?.house?.floors) {
+      // проект обновился после сохранения: берём новую версию, переносим выбор вариантов,
+      // прежнюю копию кладём в резервную
+      await store.backup(saved);
+      for (const [group, g] of Object.entries(saved.house.variants ?? {})) {
+        if (g.active && house.variants?.[group]?.active !== g.active) applyVariant(house, group, g.active);
+      }
+      build(house);
+      editor.setHouse(house, { keepView: true });
+      renderVariants();
+      await store.save(house, original.revision ?? null);
+      setStatus('Проект обновлён. Выбор вариантов перенесён, прежняя копия сохранена как резервная.');
     }
   } catch {
     setStatus('Сохранённую версию загрузить не удалось, показан проект');

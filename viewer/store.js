@@ -4,6 +4,7 @@
 
 const LOCAL_KEY = 'myhome.house.v1';
 const DOC_PATH = 'models/current';
+const BACKUP_PATH = 'models/previous';
 
 export async function openStore() {
   const db = window.claude?.use ? await window.claude.use('db').catch(() => null) : null;
@@ -12,14 +13,20 @@ export async function openStore() {
     let readOnly = false;
     return {
       kind: 'shared',
+      // → { house, base } или null; base — ревизия проекта, от которой сделаны правки
       async load() {
         const snap = await ref.get();
-        return snap.exists ? snap.data().house ?? null : null;
+        if (!snap.exists) return null;
+        const d = snap.data();
+        return d.house ? { house: d.house, base: d.base ?? null } : null;
       },
-      async save(house) {
+      async backup(saved) {
+        await db.doc(BACKUP_PATH).set({ house: JSON.parse(JSON.stringify(saved.house)), base: saved.base, savedAt: new Date().toISOString() });
+      },
+      async save(house, base) {
         if (readOnly) throw Object.assign(new Error('read-only'), { code: 'read_only' });
         try {
-          await ref.set({ house: JSON.parse(JSON.stringify(house)), savedAt: new Date().toISOString() });
+          await ref.set({ house: JSON.parse(JSON.stringify(house)), base: base ?? null, savedAt: new Date().toISOString() });
         } catch (e) {
           if (e?.code === 'invalid_argument') readOnly = true;
           throw e;
@@ -33,11 +40,16 @@ export async function openStore() {
     async load() {
       try {
         const raw = localStorage.getItem(LOCAL_KEY);
-        return raw ? JSON.parse(raw) : null;
+        if (!raw) return null;
+        const d = JSON.parse(raw);
+        return d.house ? d : { house: d, base: null };   // старый формат — просто модель
       } catch { return null; }
     },
-    async save(house) {
-      try { localStorage.setItem(LOCAL_KEY, JSON.stringify(house)); } catch { /* хранилище недоступно */ }
+    async backup(saved) {
+      try { localStorage.setItem(LOCAL_KEY + '.backup', JSON.stringify(saved)); } catch { /* хранилище недоступно */ }
+    },
+    async save(house, base) {
+      try { localStorage.setItem(LOCAL_KEY, JSON.stringify({ house, base: base ?? null })); } catch { /* хранилище недоступно */ }
     },
     async clear() {
       try { localStorage.removeItem(LOCAL_KEY); } catch { /* хранилище недоступно */ }
