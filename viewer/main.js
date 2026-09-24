@@ -520,6 +520,19 @@ function buildFloor(floor, defaults) {
   }
 
   const { regions, rooms } = computeRooms(floor);
+  // подложка под полы комнат: сплошной слой по контуру этажа — закрывает щели у стен и на границах зон
+  // (полы комнат строятся по сетке 5 см и не доходят вплотную), берётся покрытие самой большой комнаты
+  if (floor.outline && regions.length) {
+    const big = regions.reduce((a, b) => (b.area > a.area ? b : a));
+    const room = floor.rooms[big.rooms[0]];
+    const shape = new THREE.Shape(floor.outline.map(([x, y]) => new THREE.Vector2(x, -y)));
+    for (const hole of floor.holes ?? []) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, -y))));
+    const base = mesh(new THREE.ShapeGeometry(shape), material(room.color ?? '#d9d4c7', null, { kind: roomFloorKind(room), side: THREE.DoubleSide }), false);
+    base.rotation.x = -Math.PI / 2;
+    base.position.y = floor.elevation + 0.002;
+    base.userData.walkable = true;
+    g.add(base);
+  }
   for (const reg of regions) {
     const room = floor.rooms[reg.rooms[0]];
     g.add(regionMesh(reg.runs, floor.elevation + 0.005, room.color ?? '#d9d4c7', roomFloorKind(room)));
