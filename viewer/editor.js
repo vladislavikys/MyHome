@@ -1285,6 +1285,16 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           Object.entries(FURNITURE).filter(([, T]) => T.group === gr).map(([key, T]) => `<option value="${key}" ${palette.furniture === key ? 'selected' : ''}>${T.name}</option>`).join('')}</optgroup>`).join('')}</select></label>
           <div class="ed-btnrow"><button type="button" id="ed-place-center">Поставить в центр плана</button></div>`;
       }
+      if (tool === 'select') {
+        const c = floor().ceiling ?? {};
+        const fin = { paint: 'Гладкий белый', stretch: 'Натяжной глянцевый', wood: 'Вагонка', concrete: 'Бетон (лофт)' };
+        const def = { paint: '#f5f3ef', stretch: '#f7f6f3', wood: '#d8b98c', concrete: '#b9b6b0' };
+        html += `<div class="ed-grid ed-ceil">
+          <label class="ed-field" for="ed-ceil"><span>${isTop() ? 'Потолок мансарды (под скатами)' : 'Потолок этажа'}</span><select id="ed-ceil">
+            ${Object.entries(fin).map(([v, n]) => `<option value="${v}" ${(c.finish ?? 'paint') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          <label class="ed-field" for="ed-ceil-c"><span>Цвет потолка</span><input id="ed-ceil-c" type="color" value="${c.color ?? def[c.finish ?? 'paint']}"></label>
+        </div>`;
+      }
       const sk = skylights();
       if (tool === 'select' && sk.length) {
         html += `<div class="ed-sky-list"><span>Мансардные окна:</span>${sk.map((s, i) =>
@@ -1376,6 +1386,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     };
     props.querySelector('#ed-del')?.addEventListener('click', deleteSelected);
     if (siteMode) { sitePropsBind(on); return; }
+    on('ed-ceil', el => { const f = floor(); f.ceiling = { finish: el.value }; propsKey = null; });
+    on('ed-ceil-c', el => { const f = floor(); f.ceiling = { ...(f.ceiling ?? {}), color: el.value }; });
     props.querySelectorAll('[data-sky]').forEach(b => b.addEventListener('click', () => {
       const s = skylights()[Number(b.dataset.sky)];
       sel = { kind: 'skylight', roof: s.roof, win: s.win };

@@ -709,6 +709,65 @@ function stairs(s) {
   return g;
 }
 
+// ---------- потолки ----------
+// floor.ceiling = { finish: 'paint' | 'stretch' | 'wood' | 'concrete', color }
+// Нижние этажи — плоскость под перекрытием следующего этажа (видна только снизу),
+// верхний — обшивка под скатами крыши внутри наружных стен (снаружи остаётся подшивка свесов).
+const CEILINGS = {
+  paint: { color: '#f5f3ef', opts: { roughness: 0.92 } },
+  stretch: { color: '#f7f6f3', opts: { roughness: 0.12, envMapIntensity: 1.3 } },
+  wood: { color: '#d8b98c', opts: { kind: 'soffit', roughness: 0.6 } },
+  concrete: { color: '#b9b6b0', opts: { kind: 'plaster', roughness: 0.95 } },
+};
+function ceilingOpts(c = {}) {
+  const f = CEILINGS[c.finish] ?? CEILINGS.paint;
+  return { color: c.color ?? f.color, opts: f.opts };
+}
+function buildCeilings(house) {
+  const floors = house.floors;
+  for (let i = 0; i < floors.length - 1; i++) {
+    const up = floors[i + 1];
+    if (!up.outline) continue;
+    const { color, opts } = ceilingOpts(floors[i].ceiling);
+    const shape = new THREE.Shape(up.outline.map(([x, y]) => new THREE.Vector2(x, y)));
+    for (const h of up.holes ?? []) shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+    const m = mesh(new THREE.ShapeGeometry(shape), material(color, null, { ...opts, side: THREE.FrontSide }), false);
+    m.rotation.x = Math.PI / 2;            // лицом вниз: сверху (вид без верхнего этажа) не мешает
+    m.position.y = up.elevation - (up.slab ?? 0.2) - 0.003;
+    floorGroups[i].add(m);
+  }
+  // мансарда: под скатами, только внутри наружных стен
+  const top = floors.at(-1);
+  if (!top?.outline) return;
+  const xs = top.outline.map(p => p[0]), ys = top.outline.map(p => p[1]), inset = 0.3;
+  const planes = [
+    new THREE.Plane(new THREE.Vector3(1, 0, 0), -(Math.min(...xs) + inset)), new THREE.Plane(new THREE.Vector3(-1, 0, 0), Math.max(...xs) - inset),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), -(Math.min(...ys) + inset)), new THREE.Plane(new THREE.Vector3(0, 0, -1), Math.max(...ys) - inset),
+  ];
+  const { color, opts } = ceilingOpts(top.ceiling);
+  const { kind, ...rest } = opts;
+  const tx = kind ? textureSet(kind) : null;
+  const mat = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, ...(tx ? { map: tx.map, normalMap: tx.normalMap, ...tx.mat } : {}), ...rest, clippingPlanes: planes });
+  for (const p of house.roofs ?? []) {
+    if (p.clip !== 'main' || p.material === 'glass') continue;
+    const pts = p.corners.map(([x, y, h]) => new THREE.Vector3(x, h, y));
+    const plane = new THREE.Plane().setFromCoplanarPoints(pts[0], pts[1], pts[2]);
+    if (plane.normal.y < 0) plane.negate();
+    const q = pts.map(v => v.clone().addScaledVector(plane.normal, -0.03).toArray());
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]], 3));
+    geo.computeVertexNormals();
+    const U = new THREE.Vector3(1, 0, 0), V = plane.normal.clone().cross(U).normalize();
+    const m = mesh(geo, mat, false);
+    m.userData.uvFn = g => {
+      const pos = g.attributes.position, uv = new Float32Array(pos.count * 2), v = new THREE.Vector3();
+      for (let k = 0; k < pos.count; k++) { v.fromBufferAttribute(pos, k); uv[k * 2] = v.dot(U); uv[k * 2 + 1] = v.dot(V); }
+      g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    };
+    roofGroup.add(m);
+  }
+}
+
 // Стенка произвольного профиля: вдоль отрезка from→to, профиль [[t, h], …] (t — от начала, h — от пола).
 // Например, стенка под маршем, повторяющая низ ступеней.
 function panelSolid(s, elevation) {
@@ -872,6 +931,7 @@ function build(house) {
     const fi = r.floor ?? 0;
     floorGroups[fi]?.add(railing(r, house.floors[fi].elevation));
   }
+  buildCeilings(house);
   buildSite(house.site, house);
   // Обрезка по крыше, UV и слияние — один раз после сборки (нужно и для «Фото»).
   const planesOf = collectClipPlanes([...floorGroups, roofGroup]);
@@ -1570,10 +1630,14 @@ async function load() {
   applySun();
 
   // Сохранённая версия появляется позже, когда хранилище ответит.
-  store = await openStore();
-  setStatus(store.kind === 'shared' ? 'Правки сохраняются в проекте' : 'Правки сохраняются в этом браузере');
+  // пока не пришла сохранённая версия, редактирование закрыто: иначе правки ушли бы в копию, которую она заменит
+  const editLabel = ui.edit.textContent;
+  ui.edit.disabled = true;
+  ui.edit.textContent = 'Загружаю ваши правки…';
   try {
-    const saved = await store.load();
+    store = await openStore();
+    setStatus(store.kind === 'shared' ? 'Правки сохраняются в проекте' : 'Правки сохраняются в этом браузере');
+    const saved = await Promise.race([store.load(), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 15000))]);
     if (saved?.house?.floors && saved.base === (original.revision ?? null)) {
       // правки сделаны от текущей версии проекта — показываем их
       house = saved.house;
@@ -1599,6 +1663,9 @@ async function load() {
     }
   } catch {
     setStatus('Сохранённую версию загрузить не удалось, показан проект');
+  } finally {
+    ui.edit.disabled = false;
+    ui.edit.textContent = editLabel;
   }
 }
 
