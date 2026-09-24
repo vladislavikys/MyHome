@@ -187,9 +187,9 @@
     .ed-head { padding: 10px 12px 8px; display: grid; gap: 8px; border-bottom: 1px solid var(--line); }
     .ed-row { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
     .ed-seg, .ed-actions { display: flex; gap: 4px; }
-    .ed-tools { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .ed-tools { display: flex; flex-wrap: wrap; gap: 4px; }
     .ed-tools::-webkit-scrollbar { display: none; }
-    .ed-tools button { flex: 1 0 auto; }
+    .ed-tools button { flex: 1 0 auto; white-space: nowrap; }
     .ed-tools button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
     .ed-close { min-width: 32px; }
     .ed-canvas { position: relative; min-height: 0; background: var(--surface-2); }
