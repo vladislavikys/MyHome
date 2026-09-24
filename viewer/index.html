@@ -101,6 +101,8 @@
     #edit { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 500; }
     #edit[aria-pressed="true"] { background: var(--surface); color: var(--ink); border-color: var(--line); }
     #error { color: var(--danger); white-space: pre-wrap; }
+    #variants:empty { display: none; }
+    #variants select { max-width: 100%; }
     #error:empty { display: none; }
     .label {
       font: 12px var(--font); background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink);
@@ -262,6 +264,7 @@
         <label><input type="checkbox" id="labels" checked> Подписи</label>
         <label>Этажи: <select id="floors"></select></label>
       </div>
+      <div class="row" id="variants"></div>
       <div class="row">
         <button type="button" id="top">Вид сверху</button>
         <button type="button" id="reset">3D вид</button>

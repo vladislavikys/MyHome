@@ -5,6 +5,7 @@
 //   parts: [
 //     { flight:  { start: [x, y] (середина передней кромки первой ступени), dir: [dx, dy], width, count, depth } },
 //     { winders: { pivot: [x, y] (внутренний угол поворота), rect: [x0, y0, x1, y1], from: угол°, to: угол°, count } },
+//     { landing: { rect: [x0, y0, x1, y1], lead: [[x, y], [x, y]] (кромка, куда приходит марш) } },
 //   ]
 // }
 // Углы на плане: 0° — вдоль +x, −90° — к −y (к оси В).
@@ -36,6 +37,12 @@ export function stairSteps(stair) {
         ];
         steps.push({ poly, lead: [poly[0], poly[3]] });
       }
+    } else if (part.landing) {
+      // промежуточная площадка — одна «ступень» по прямоугольнику
+      const [x0, y0, x1, y1] = part.landing.rect;
+      const poly = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+      const lead = part.landing.lead ?? [poly[3], poly[2]];
+      steps.push({ poly, lead, landing: true });
     } else if (part.winders) {
       const { pivot, rect, from, to, count } = part.winders;
       const [x0, y0, x1, y1] = rect;

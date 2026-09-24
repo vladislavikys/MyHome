@@ -7,6 +7,7 @@ import { createEditor } from './editor.js';
 import { openStore, downloadJson } from './store.js';
 import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
+import { applyVariant, tourPoints } from './variants.js';
 
 // Координаты плана [x, y] (метры) переводятся в 3D как (x, высота, y).
 // Высоты — абсолютные отметки, 0.000 = чистый пол 1-го этажа.
@@ -631,7 +632,7 @@ function startTour() {
   ui.floors.value = floorGroups.length - 1;
   ui.roof.checked = true;
   applyVisibility();
-  if (!tour.start(house.tour)) controls.enabled = true;
+  if (!tour.start(tourPoints(house))) controls.enabled = true;
 }
 function stopTour() {
   tour.stop();
@@ -722,8 +723,30 @@ editor.onReset(() => {
   house = structuredClone(original);
   editor.setHouse(house, { keepView: true });
   build(house);
+  renderVariants();
   scheduleSave();
 });
+
+// Переключатели вариантов (например, лестницы) в панели 3D.
+function renderVariants() {
+  const box = document.getElementById('variants');
+  box.innerHTML = '';
+  for (const [group, g] of Object.entries(house.variants ?? {})) {
+    const label = document.createElement('label');
+    label.textContent = (g.label ?? group) + ': ';
+    const sel = document.createElement('select');
+    sel.id = 'variant-' + group;
+    for (const [key, opt] of Object.entries(g.options ?? {})) sel.add(new Option(opt.name ?? key, key, false, key === g.active));
+    sel.onchange = () => {
+      applyVariant(house, group, sel.value);
+      build(house);
+      editor.setHouse(house, { keepView: true });
+      scheduleSave();
+    };
+    label.append(sel);
+    box.append(label);
+  }
+}
 
 async function load() {
   const res = await fetch('house.json', { cache: 'no-store' });
@@ -733,6 +756,7 @@ async function load() {
   ui.title.textContent = house.name ?? 'Мой дом';
   build(house);
   editor.setHouse(house);
+  renderVariants();
   view('3d');
 
   // Сохранённая версия появляется позже, когда хранилище ответит.
@@ -742,8 +766,15 @@ async function load() {
     const saved = await store.load();
     if (saved?.floors) {
       house = saved;
+      // сохранённая версия без вариантов (старая) — берём их из проекта
+      if (!house.variants && original.variants) {
+        house.variants = structuredClone(original.variants);
+        applyVariant(house, 'stairs', house.variants.stairs.active);
+      }
+      if (!house.tour && original.tour) house.tour = structuredClone(original.tour);
       build(house);
       editor.setHouse(house, { keepView: true });
+      renderVariants();
       setStatus(store.kind === 'shared' ? 'Загружена сохранённая версия' : 'Загружена версия из этого браузера');
     }
   } catch {
