@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { computeRooms } from './rooms.js';
+import { stairSteps } from './stairs.js';
 import { createEditor } from './editor.js';
 import { openStore, downloadJson } from './store.js';
 import { createWalk } from './walk.js';
@@ -369,18 +370,27 @@ function prism(s) {
   return m;
 }
 
-// Прямой марш вдоль оси y плана.
+// Лестница: каждая ступень — проступь-плита по своему многоугольнику (марши и забежные).
 function stairs(s) {
   const g = new THREE.Group();
-  const [x0, x1] = s.x, [ya, yb] = s.y, [h0, h1] = s.h;
-  const n = s.steps;
-  const run = (yb - ya) / n, rise = (h1 - h0) / n;
-  const mat = material(s.color ?? '#b08a5a');
-  for (let i = 0; i < n; i++) {
-    const m = box(x1 - x0, rise * (i + 1), Math.abs(run), mat);
-    m.userData.walkable = true;
-    m.position.set((x0 + x1) / 2, h0 + (rise * (i + 1)) / 2, ya + run * (i + 0.5));
+  const mat = material(s.color ?? '#b08a5a', null, { side: THREE.DoubleSide });
+  const t = s.thickness ?? 0.05;
+  for (const { poly, lead, top } of stairSteps(s)) {
+    const m = slab(poly, null, top, t, mat);
+    m.castShadow = true;
     g.add(m);
+    // подступенок — от предыдущей ступени до этой по передней кромке
+    if (s.risersClosed !== false) {
+      const [a, b] = lead;
+      const h = (s.h[1] - s.h[0]) / (s.risers ?? 17);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len > 0.05) {
+        const r = box(len, h, 0.03, mat);
+        r.position.set((a[0] + b[0]) / 2, top - t - h / 2 + 0.001, (a[1] + b[1]) / 2);
+        r.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
+        g.add(r);
+      }
+    }
   }
   return g;
 }
@@ -566,6 +576,9 @@ renderer.domElement.addEventListener('pointerup', ev => {
     let o = hit.object, visible = true;
     for (let q = o; q; q = q.parent) if (!q.visible) visible = false;
     if (!visible) continue;
+    // срезанные крышей части стен не видны — сквозь них можно нажать
+    const planes = hit.object.material?.clippingPlanes;
+    if (planes?.some(pl => pl.distanceToPoint(hit.point) < 0)) continue;
     while (o && !o.userData.pick) o = o.parent;
     if (o) {
       if (!document.body.classList.contains('editing')) setEditing(true);

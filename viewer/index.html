@@ -192,6 +192,7 @@
     .ed-field input[type="text"] { font-family: var(--font); }
     .ed-field input[type="color"] { padding: 2px; height: 34px; }
     .ed-slider { grid-column: 1 / -1; }
+    .ed-sky-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--muted); }
     .ed-slider-row { display: flex; gap: 8px; align-items: center; }
     .ed-slider-row input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--accent); height: 28px; }
     .ed-slider-row input[type="number"] { width: 5.5em; flex: none; }
@@ -207,6 +208,8 @@
     .g-slab { fill: var(--slab); stroke: none; }
     .g-room { opacity: .45; }
     .g-hole { fill: var(--surface-2); stroke: var(--axis); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
+    .g-stair { fill: color-mix(in srgb, var(--door) 22%, var(--surface)); stroke: var(--door); }
+    .g-stair-up { opacity: .45; }
     .g-h22 { stroke: var(--h22); stroke-width: 1.2px; vector-effect: non-scaling-stroke; stroke-dasharray: 6 5; }
     .g-h22-label { fill: var(--h22); font-family: var(--mono); text-anchor: end; }
     .g-wall { stroke: var(--partition); }

@@ -2,6 +2,7 @@
 // Работает мышью и пальцем. Меняет объект house на месте и сообщает об изменениях.
 
 import { computeRooms } from './rooms.js';
+import { stairSteps } from './stairs.js';
 
 const SNAP = 0.05;
 const HIT_PX = 12;
@@ -232,6 +233,10 @@ export function createEditor(root, { onChange, onFloor }) {
         return { kind: 'opening', opening: o, wall: w };
       }
     }
+    for (const s of skylights()) {
+      const [a, b] = s.win.x, [c, d] = s.win.y;
+      if (p[0] >= a && p[0] <= b && p[1] >= c && p[1] <= d) return { kind: 'skylight', ...s };
+    }
     for (const [k, room] of (floor().rooms ?? []).entries()) {
       if (room.at && Math.abs(p[0] - room.at[0]) < 0.9 && Math.abs(p[1] - room.at[1]) < 0.35) return { kind: 'room', room, index: k };
     }
@@ -242,10 +247,6 @@ export function createEditor(root, { onChange, onFloor }) {
       if (pr.t >= -0.1 && pr.t <= pr.g.len + 0.1 && pr.d < lim && pr.d < bestD) { best = w; bestD = pr.d; }
     }
     if (best) return { kind: 'wall', wall: best };
-    for (const s of skylights()) {
-      const [a, b] = s.win.x, [c, d] = s.win.y;
-      if (p[0] >= a && p[0] <= b && p[1] >= c && p[1] <= d) return { kind: 'skylight', ...s };
-    }
     return null;
   }
 
@@ -528,6 +529,15 @@ export function createEditor(root, { onChange, onFloor }) {
     for (const hole of f.holes ?? []) {
       out.push(`<polygon class="g-hole" points="${hole.map(p => p.join(',')).join(' ')}"/>`);
     }
+    // ступени лестниц: на своём этаже — сплошные, на этаже выше — бледные
+    for (const st of house.stairs ?? []) {
+      const fi = st.floor ?? 0;
+      if (floorIdx !== fi && floorIdx !== fi + 1) continue;
+      const cls = floorIdx === fi ? 'g-stair' : 'g-stair g-stair-up';
+      for (const { poly } of stairSteps(st)) {
+        out.push(`<polygon class="${cls}" points="${poly.map(p => p.join(',')).join(' ')}" stroke-width="${1 * k}"/>`);
+      }
+    }
     for (const [a, b, y] of heightLines()) {
       out.push(`<line class="g-h22" x1="${a}" y1="${y}" x2="${b}" y2="${y}"/>`,
         `<text class="g-h22-label" x="${b - 4 * k}" y="${y - 4 * k}" font-size="${11 * k}">h 2,2 м</text>`);
@@ -647,6 +657,13 @@ export function createEditor(root, { onChange, onFloor }) {
     let html = '';
     if (!sel) {
       html = `<p class="ed-hint">${TOOLS.find(t => t[0] === tool)[2]}</p>`;
+      const sk = skylights();
+      if (tool === 'select' && sk.length) {
+        html += `<div class="ed-sky-list"><span>Мансардные окна:</span>${sk.map((s, i) =>
+          `<button type="button" data-sky="${i}">${s.win.name ?? 'Окно ' + (i + 1)}</button>`).join('')}</div>`;
+      } else if (tool === 'select' && !isTop()) {
+        html += `<p class="ed-hint">Мансардные окна настраиваются на вкладке «${house.floors.at(-1).short ?? 'верхний этаж'}».</p>`;
+      }
     } else if (sel.kind === 'wall') {
       const w = sel.wall, g = wallGeom(w);
       const kind = w.virtual ? 'Граница зоны (в 3D не видна)' : w.material === 'glass' ? 'Витраж' : (w.thickness ?? 0.3) >= 0.25 ? 'Наружная стена' : 'Перегородка';
@@ -673,7 +690,7 @@ export function createEditor(root, { onChange, onFloor }) {
         </div>`;
     } else if (sel.kind === 'skylight') {
       const s = sel.win;
-      html = `<div class="ed-props-head"><strong>Мансардное окно</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+      html = `<div class="ed-props-head"><strong>Мансардное окно${s.name ? ' · ' + s.name : ''}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
         <div class="ed-grid">
           ${slider('ed-sw', 'Ширина, м', s.x[1] - s.x[0], 0.4, 1.6)}
           ${slider('ed-sl', 'Высота по скату, м', (s.y[1] - s.y[0]) * slopeK(sel.roof), 0.5, 2.0)}
@@ -708,6 +725,11 @@ export function createEditor(root, { onChange, onFloor }) {
       }
     };
     props.querySelector('#ed-del')?.addEventListener('click', deleteSelected);
+    props.querySelectorAll('[data-sky]').forEach(b => b.addEventListener('click', () => {
+      const s = skylights()[Number(b.dataset.sky)];
+      sel = { kind: 'skylight', roof: s.roof, win: s.win };
+      render();
+    }));
     if (sel?.kind === 'wall') {
       const w = sel.wall;
       on('ed-len', el => {
