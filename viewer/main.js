@@ -1177,7 +1177,27 @@ function flatQuad(poly, h, mat) {
   return m;
 }
 
+// Пристройка — часть того же здания: b.annex = { length, height, rise, side: 'end' | 'start' }.
+// Стоит у торца по оси конька, ширина — как у здания; двигается и поворачивается вместе с ним.
+function annexRect(b) {
+  const a = b.annex;
+  if (!a) return null;
+  const [x0, y0, x1, y1] = b.rect, w = x1 - x0, d = y1 - y0;
+  const alongX = b.ridge ? b.ridge === 'x' : w >= d - 1e-6, L = a.length ?? 3, end = a.side !== 'start';
+  return alongX ? (end ? [x1, y0, x1 + L, y1] : [x0 - L, y0, x0, y1]) : (end ? [x0, y1, x1, y1 + L] : [x0, y0 - L, x1, y0]);
+}
 function outbuilding(b) {
+  const g = outbuildingPart(b);
+  const ar = annexRect(b);
+  if (ar) {
+    const a = b.annex;
+    const w = b.rect[2] - b.rect[0], d = b.rect[3] - b.rect[1];
+    g.add(outbuildingPart({ ...b, annex: undefined, name: undefined, rect: ar, height: a.height ?? (b.height ?? 2.8) - 0.5,
+      rise: a.rise ?? b.rise, ridge: b.ridge ?? (w >= d - 1e-6 ? 'x' : 'y'), join: a.side === 'start' ? 'end' : 'start', doors: a.doors ?? [] }));
+  }
+  return g;
+}
+function outbuildingPart(b) {
   const g = new THREE.Group();
   const [x0, y0, x1, y1] = b.rect;
   const w = x1 - x0, dpt = y1 - y0, H = b.height ?? 2.8;
@@ -1195,28 +1215,30 @@ function outbuilding(b) {
     const alongX = b.ridge ? b.ridge === 'x' : w >= dpt - 1e-6;   // ridge: 'x' | 'y' — явное направление конька
     // join: 'start' | 'end' — этот торец примыкает к другому зданию: без свеса и без фронтона
     const o0 = b.join === 'start' ? 0 : o, o1 = b.join === 'end' ? 0 : o;
-    const span = (alongX ? dpt : w) / 2 + o, len = (alongX ? w : dpt) + o0 + o1, rise = b.rise ?? span * 0.7;
-    const shift = (o1 - o0) / 2;
+    // rise — подъём конька над верхом стен; скат лежит на верхней кромке стены и продолжается свесом вниз
+    const half = (alongX ? dpt : w) / 2, rise = b.rise ?? half * 0.7;
+    const span = half + o, len = (alongX ? w : dpt) + o0 + o1, shift = (o1 - o0) / 2;
+    const ang = Math.atan2(rise, half), slope = span / Math.cos(ang), th = 0.1;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     for (const side of [-1, 1]) {
-      const slope = Math.hypot(span, rise);
-      const p = box(alongX ? len : 0.12, 0.12, alongX ? 0.12 : len, roofMat);
-      p.scale.set(1, 1, 1);
-      const panel = box(alongX ? len : slope, 0.1, alongX ? slope : len, roofMat);
-      const ang = Math.atan2(rise, span);
-      panel.position.set(
-        (x0 + x1) / 2 + (alongX ? shift : side * span / 2),
-        H + rise / 2,
-        (y0 + y1) / 2 + (alongX ? side * span / 2 : shift));
+      const panel = box(alongX ? len : slope, th, alongX ? slope : len, roofMat);
+      // середина ската по горизонтали — span/2 от конька; поднимаем на полтолщины по нормали
+      const hy = H + rise - (span / 2) * Math.tan(ang) + (th / 2) / Math.cos(ang);
+      panel.position.set(cx + (alongX ? shift : side * span / 2), hy, cy + (alongX ? side * span / 2 : shift));
       if (alongX) panel.rotation.x = side * ang; else panel.rotation.z = -side * ang;
       g.add(panel);
     }
-    // фронтоны
-    const tri = new THREE.Shape([new THREE.Vector2(-(alongX ? dpt : w) / 2, 0), new THREE.Vector2((alongX ? dpt : w) / 2, 0), new THREE.Vector2(0, rise * ((alongX ? dpt : w) / 2) / span)]);
+    // коньковая планка
+    const ridgeCap = box(alongX ? len : 0.16, 0.08, alongX ? 0.16 : len, roofMat);
+    ridgeCap.position.set(cx + (alongX ? shift : 0), H + rise + th / Math.cos(ang) - 0.01, cy + (alongX ? 0 : shift));
+    g.add(ridgeCap);
+    // фронтоны: от верха стен до конька (под скат, без зазора)
+    const tri = new THREE.Shape([new THREE.Vector2(-half, 0), new THREE.Vector2(half, 0), new THREE.Vector2(0, rise)]);
     for (const side of [-1, 1]) {
       if ((side < 0 && b.join === 'start') || (side > 0 && b.join === 'end')) continue;
       const gm = mesh(new THREE.ShapeGeometry(tri), pbr(b.wallColor ?? '#e9e4da', b.wallTexture ?? 'plaster', { side: THREE.DoubleSide }));
-      if (alongX) { gm.rotation.y = Math.PI / 2; gm.position.set(side > 0 ? x1 : x0, H, (y0 + y1) / 2); }
-      else gm.position.set((x0 + x1) / 2, H, side > 0 ? y1 : y0);
+      if (alongX) { gm.rotation.y = Math.PI / 2; gm.position.set(side > 0 ? x1 : x0, H, cy); }
+      else gm.position.set(cx, H, side > 0 ? y1 : y0);
       g.add(gm);
     }
   } else if (b.roof === 'flat') {
@@ -1439,9 +1461,10 @@ function buildSite(site, house) {
       const [x0, x1, y0, y1] = s.bottom.rect;
       return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(toSite);
     }),
-    ...(site.buildings ?? []).map(b => {
-      const [x0, y0, x1, y1] = b.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, a = THREE.MathUtils.degToRad(b.rot ?? 0);
-      return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]);
+    ...(site.buildings ?? []).flatMap(b => {
+      const cx = (b.rect[0] + b.rect[2]) / 2, cy = (b.rect[1] + b.rect[3]) / 2, a = THREE.MathUtils.degToRad(b.rot ?? 0);
+      return [b.rect, annexRect(b)].filter(Boolean).map(([x0, y0, x1, y1]) =>
+        [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]));
     }),
     ...(site.paths ?? []).map(p => p.poly),
     ...(site.items ?? []).filter(it => it.type === 'gazebo').map(it => {

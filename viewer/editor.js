@@ -343,9 +343,21 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     return xs.length ? [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2] : [0, 0];
   };
   const bldCenter = b => [(b.rect[0] + b.rect[2]) / 2, (b.rect[1] + b.rect[3]) / 2];
+  // пристройка (b.annex) — у торца по оси конька, как в main.js annexRect
+  const annexRect = b => {
+    const a = b.annex;
+    if (!a) return null;
+    const [x0, y0, x1, y1] = b.rect, w = x1 - x0, d = y1 - y0;
+    const alongX = b.ridge ? b.ridge === 'x' : w >= d - 1e-6, L = a.length ?? 3, end = a.side !== 'start';
+    return alongX ? (end ? [x1, y0, x1 + L, y1] : [x0 - L, y0, x0, y1]) : (end ? [x0, y1, x1, y1 + L] : [x0, y0 - L, x1, y0]);
+  };
+  const rectPoly = (r, b) => { const [x0, y0, x1, y1] = r, c = bldCenter(b); return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => rotP(p, b.rot ?? 0, c)); };
+  // контур здания целиком (с пристройкой)
   const bldPoly = b => {
-    const [x0, y0, x1, y1] = b.rect, c = bldCenter(b);
-    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => rotP(p, b.rot ?? 0, c));
+    const ar = annexRect(b);
+    if (!ar) return rectPoly(b.rect, b);
+    const u = [Math.min(b.rect[0], ar[0]), Math.min(b.rect[1], ar[1]), Math.max(b.rect[2], ar[2]), Math.max(b.rect[3], ar[3])];
+    return rectPoly(u, b);
   };
   const gateObj = g => Array.isArray(g) ? { at: [g[0], g[1]], width: g[2] * 2, type: 'gap' } : g;
   // ребро забора, ближайшее к точке
@@ -397,11 +409,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (axis === 'y') d.axis = 'y'; else delete d.axis;
   }
 
-  // Двускатная крыша: полупролёт с свесом и уклон в градусах (как в 3D: main.js outbuilding).
+  // Двускатная крыша: полуширина здания и уклон в градусах (как в 3D: main.js outbuilding).
   const gableSpan = b => {
     const w = b.rect[2] - b.rect[0], d = b.rect[3] - b.rect[1];
     const alongX = b.ridge ? b.ridge === 'x' : w >= d - 1e-6;
-    return (alongX ? d : w) / 2 + (b.overhang ?? 0.4);
+    return (alongX ? d : w) / 2;   // уклон считается по полуширине здания (как в 3D)
   };
   const gablePitch = b => { const s = gableSpan(b); return Math.atan2(b.rise ?? s * 0.7, s) * 180 / Math.PI; };
 
@@ -593,7 +605,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     }
     if (hp.length) label(toSite(houseCenter()), 'Дом');
     for (const b of s.buildings ?? []) {
-      out.push(`<polygon class="g-bld" points="${pts(bldPoly(b))}" stroke-width="${2 * k}"/>`);
+      for (const r of [b.rect, annexRect(b)].filter(Boolean)) out.push(`<polygon class="g-bld" points="${pts(rectPoly(r, b))}" stroke-width="${2 * k}"/>`);
       const c = bldCenter(b);
       for (const d of b.doors ?? []) {
         const [p0, p1] = doorSeg(b, d);
@@ -694,6 +706,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${[['flat', 'Плоская'], ['shed', 'Односкатная'], ['gable', 'Двускатная']].map(([v, n]) => `<option value="${v}" ${(b.roof ?? 'shed') === v ? 'selected' : ''}>${n}</option>`).join('')}
           </select></label>
           ${slider('ed-rot', 'Поворот, °', b.rot ?? 0, 0, 359, 1)}${rotBtns}
+          ${b.annex ? `${num('ed-anl', 'Пристройка: длина, м', b.annex.length ?? 3, 0.1)}${num('ed-anh', 'Пристройка: стены, м', b.annex.height ?? 2.5, 0.1)}
+            <p class="ed-readout">Конёк пристройки ниже основного на ${(((b.height ?? 2.8) + (b.rise ?? 0)) - ((b.annex.height ?? 2.5) + (b.annex.rise ?? b.rise ?? 0))).toFixed(2)} м</p>
+            <div class="ed-btnrow"><button type="button" id="ed-anside">Пристройку к другому торцу</button><button type="button" id="ed-andel">Убрать пристройку</button></div>`
+          : (b.roof ?? 'shed') === 'gable' ? `<div class="ed-btnrow"><button type="button" id="ed-anadd">Добавить пристройку</button></div>` : ''}
           ${moveBtns('постройку')}
           <div class="ed-btnrow"><button type="button" id="ed-adddoor">Добавить дверь</button></div>
           <p class="ed-hint">Двери постройки тянутся вдоль стен; нажмите на дверь, чтобы изменить размер или удалить.</p>
@@ -789,6 +805,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-bh', el => { const v = parseFloat(el.value); if (v > 1) b.height = v; });
       on('ed-pitch', el => { const v = parseFloat(el.value); if (v > 1 && v < 80) b.rise = r2(gableSpan(b) * Math.tan(v * Math.PI / 180)); });
       on('ed-roof', el => { b.roof = el.value; propsKey = null; });
+      on('ed-anl', el => { const v = parseFloat(el.value); if (v > 0.5) b.annex.length = v; });
+      on('ed-anh', el => { const v = parseFloat(el.value); if (v > 1) b.annex.height = v; });
+      btn('ed-anside', () => { b.annex.side = b.annex.side === 'start' ? 'end' : 'start'; });
+      btn('ed-andel', () => { delete b.annex; propsKey = null; });
+      btn('ed-anadd', () => { b.annex = { length: 3, height: Math.max(1.8, (b.height ?? 2.8) - 0.5), rise: b.rise }; propsKey = null; });
       btn('ed-adddoor', () => {
         const d = { width: 0.9, height: 2.0, color: '#6e4a2f', at: [0, 0] };
         placeDoor(b, d, rotP([bldCenter(b)[0], b.rect[3] + 1], b.rot ?? 0, bldCenter(b)));
