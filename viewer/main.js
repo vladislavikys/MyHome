@@ -242,7 +242,8 @@ function box(w, h, d, mat) {
 }
 
 // Оконный/дверной блок: белая рама + стекло или полотно.
-function openingFill(o, t) {
+// room = { l, r } — сколько места для наличника слева/справа от проёма (до примыкающей стены), м
+function openingFill(o, t, room = { l: 0.08, r: 0.08 }) {
   const g = new THREE.Group();
   const f = 0.06;
   const d = Math.min(t, 0.12);
@@ -268,8 +269,13 @@ function openingFill(o, t) {
     const metal = style === 'metal';
     for (const side of [-1, 1]) {
       const z = side * (d / 2 + 0.012);
-      const top = box(o.width + 0.16, 0.08, 0.02, M.frame); top.position.set(0, o.height + 0.04, z); g.add(top);
-      for (const sx of [-1, 1]) { const st = box(0.08, o.height + 0.08, 0.02, M.frame); st.position.set(sx * (o.width / 2 + 0.04), (o.height + 0.08) / 2 - 0.04, z); g.add(st); }
+      // наличник обрезается у примыкающей стены, чтобы не проходить сквозь неё в соседнюю комнату
+      const cl = Math.max(0, Math.min(0.08, room.l)), cr = Math.max(0, Math.min(0.08, room.r));
+      const top = box(o.width + cl + cr, 0.08, 0.02, M.frame); top.position.set((cr - cl) / 2, o.height + 0.04, z); g.add(top);
+      for (const [sx, cw] of [[-1, cl], [1, cr]]) {
+        if (cw < 0.01) continue;
+        const st = box(cw, o.height + 0.08, 0.02, M.frame); st.position.set(sx * (o.width / 2 + cw / 2), (o.height + 0.08) / 2 - 0.04, z); g.add(st);
+      }
     }
     if (metal) {
       // карниз над входной дверью, снаружи
@@ -335,6 +341,37 @@ function openingFill(o, t) {
 }
 
 // Стена с проёмами: собирается из кусков вдоль оси стены (локальная X).
+// Свободное место слева/справа от проёма [a, b] на стене до ближайшей примыкающей стены (для наличников).
+function casingRoom(wall, floor, a, b) {
+  const [x1, y1] = wall.from, [x2, y2] = wall.to;
+  const L = Math.hypot(x2 - x1, y2 - y1), u = [(x2 - x1) / L, (y2 - y1) / L], t = wall.thickness ?? 0.3;
+  const proj = p => [(p[0] - x1) * u[0] + (p[1] - y1) * u[1], Math.abs((p[0] - x1) * -u[1] + (p[1] - y1) * u[0])];
+  const obst = [];
+  for (const w2 of floor.walls) {
+    if (w2 === wall || w2.virtual) continue;
+    const t2 = w2.thickness ?? 0.3;
+    // конец другой стены упирается в эту
+    for (const e of [w2.from, w2.to]) {
+      const [s, d] = proj(e);
+      if (d <= t / 2 + 0.03 && s > -0.05 && s < L + 0.05) obst.push([s - t2 / 2, s + t2 / 2]);
+    }
+    // эта стена упирается концом в другую
+    const L2 = Math.hypot(w2.to[0] - w2.from[0], w2.to[1] - w2.from[1]) || 1;
+    const u2 = [(w2.to[0] - w2.from[0]) / L2, (w2.to[1] - w2.from[1]) / L2];
+    for (const [e, s] of [[wall.from, 0], [wall.to, L]]) {
+      const s2 = (e[0] - w2.from[0]) * u2[0] + (e[1] - w2.from[1]) * u2[1];
+      const d2 = Math.abs((e[0] - w2.from[0]) * -u2[1] + (e[1] - w2.from[1]) * u2[0]);
+      if (d2 <= t2 / 2 + 0.03 && s2 > -0.05 && s2 < L2 + 0.05) obst.push([s - t2 / 2, s + t2 / 2]);
+    }
+  }
+  let l = 0.08, r = 0.08;
+  for (const [o0, o1] of obst) {
+    if (o1 <= a + 1e-3) l = Math.min(l, a - o1);
+    if (o0 >= b - 1e-3) r = Math.min(r, o0 - b);
+  }
+  return { l, r };
+}
+
 function buildWall(wall, openings, floor, defaults) {
   const [x1, y1] = wall.from;
   const [x2, y2] = wall.to;
@@ -366,7 +403,7 @@ function buildWall(wall, openings, floor, defaults) {
     piece(cursor, a, 0, H);
     piece(a, b, 0, sill);
     piece(a, b, sill + o.height, H);
-    const fill = openingFill(o, t);
+    const fill = openingFill(o, t, casingRoom(wall, floor, a, b));
     fill.userData.pick = { kind: 'opening', opening: o };
     fill.position.set((a + b) / 2, sill, 0);
     g.add(fill);
