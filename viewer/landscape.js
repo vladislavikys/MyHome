@@ -155,7 +155,8 @@ export function buildArea(a, M, seed = 1) {
       }
     }
   } else {
-    const m = flat(poly, kind === 'gravel' ? 0.014 : 0.012, kind === 'gravel' ? M.gravel : M.paving);
+    // каждое следующее покрытие на 4 мм выше: пересекающиеся дорожки не мерцают
+    const m = flat(poly, 0.012 + (seed % 12) * 0.004, kind === 'gravel' ? M.gravel : M.paving);
     m.userData.walkable = true;
     g.add(m);
   }
@@ -341,8 +342,9 @@ export function buildRoads(site, M) {
   const roads = site.roads ?? [];
   roads.forEach((r, i) => {
     const sh = r.shoulder ?? 0.6;
-    g.add(quad(r.from, r.to, r.width + 2 * sh, 0.006 + i * 0.001, M.shoulder));
-    g.add(quad(r.from, r.to, r.width, 0.012 + i * 0.001, r.kind === 'dirt' ? M.dirt : M.asphalt));
+    // слои разнесены на сантиметры: при миллиметрах на расстоянии поверхности «мерцают» полосами
+    g.add(quad(r.from, r.to, r.width + 2 * sh, 0.01 + i * 0.01, M.shoulder));
+    g.add(quad(r.from, r.to, r.width, 0.03 + i * 0.015, r.kind === 'dirt' ? M.dirt : M.asphalt));
   });
   // съезды: от ворот наружу до кромки дороги, параллельной забору
   const B = site.boundary ?? [];
@@ -368,7 +370,7 @@ export function buildRoads(site, M) {
     if (!best) continue;
     const end = [gate.at[0] + best.dir[0] * (best.reach + 0.3), gate.at[1] + best.dir[1] * (best.reach + 0.3)];
     const wide = gate.type === 'slide' || gate.width > 2;
-    g.add(quad(gate.at, end, gate.width + (wide ? 1.2 : 0.4), 0.014, wide ? (best.r.kind === 'dirt' ? M.dirt : M.asphalt) : M.paving));
+    g.add(quad(gate.at, end, gate.width + (wide ? 1.2 : 0.4), 0.065, wide ? (best.r.kind === 'dirt' ? M.dirt : M.asphalt) : M.paving));
   }
   return g;
 }
