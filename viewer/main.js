@@ -397,27 +397,34 @@ function stairs(s) {
 }
 
 // Перила: стойки, поручень и балясины вдоль ломаной.
+// Точка пути [x, y] или [x, y, h] — h: отметка низа перил над полом этажа (для наклонных перил лестницы).
 function railing(r, elevation) {
   const g = new THREE.Group();
   const mat = material(r.color ?? '#5a3822');
   const H = r.height ?? 0.95, step = r.baluster ?? 0.12;
-  const pts = r.path;
+  const pts = r.path.map(([x, y, h = 0]) => new THREE.Vector3(x, elevation + h, y));
+  const X = new THREE.Vector3(1, 0, 0);
+  const bar = (a, b, w, d) => {
+    const dir = b.clone().sub(a);
+    const len = dir.length();
+    const m = box(len, w, d, mat);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(X, dir.normalize());
+    return m;
+  };
   for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-    const len = Math.hypot(bx - ax, by - ay);
-    const ang = -Math.atan2(by - ay, bx - ax);
-    const rail = box(len + 0.06, 0.06, 0.07, mat);
-    rail.position.set((ax + bx) / 2, elevation + H, (ay + by) / 2);
-    rail.rotation.y = ang;
-    g.add(rail);
-    const n = Math.max(1, Math.round(len / step));
+    const a = pts[i], b = pts[i + 1];
+    const up = new THREE.Vector3(0, H, 0);
+    g.add(bar(a.clone().add(up), b.clone().add(up), 0.06, 0.07));   // поручень
+    const flat = Math.hypot(b.x - a.x, b.z - a.z);
+    const n = Math.max(1, Math.round(flat / step));
     for (let k = 0; k <= n; k++) {
       const t = k / n, post = k === 0 || k === n;
-      const b = box(post ? 0.08 : 0.03, H, post ? 0.08 : 0.03, mat);
-      b.position.set(ax + (bx - ax) * t, elevation + H / 2, ay + (by - ay) * t);
-      b.rotation.y = ang;
-      b.userData.collide = true;
-      g.add(b);
+      const p = a.clone().lerp(b, t);
+      const m = box(post ? 0.08 : 0.03, H, post ? 0.08 : 0.03, mat);
+      m.position.set(p.x, p.y + H / 2, p.z);
+      m.userData.collide = true;
+      g.add(m);
     }
   }
   return g;
