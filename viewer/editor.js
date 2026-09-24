@@ -832,6 +832,17 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     setTimeout(() => props.querySelector('#ed-room-name')?.select(), 0);
   }
 
+  function placeFurniture(p) {
+    begin();
+    const it = { type: palette.furniture, at: [r2(snap(p[0])), r2(snap(p[1]))] };
+    (floor().furniture ??= []).push(it);
+    sel = { kind: 'furn', it };
+    tool = 'select';
+    root.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === tool));
+    commit();
+    $('ed-status').textContent = `Поставлено: ${FURNITURE[it.type]?.name ?? 'предмет'} — тяните, чтобы передвинуть`;
+  }
+
   function finishWall() {
     if (!draft || dist(draft.from, draft.to) < 0.2) { draft = null; render(); return; }
     begin();
@@ -864,16 +875,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (tool === 'window' || tool === 'door') { addOpening(p, tool); return; }
     if (tool === 'skylight') { addSkylight(p); return; }
     if (tool === 'room') { addRoom(p); return; }
-    if (tool === 'furniture') {
-      begin();
-      const it = { type: palette.furniture, at: [r2(snap(p[0])), r2(snap(p[1]))] };
-      (floor().furniture ??= []).push(it);
-      sel = { kind: 'furn', it };
-      tool = 'select';
-      root.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === tool));
-      commit();
-      return;
-    }
+    if (tool === 'furniture') { placeFurniture(p); return; }
 
     const h = hit(p);
     if (!h) {
@@ -1220,7 +1222,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       if (tool === 'furniture') {
         const groups = [...new Set(Object.values(FURNITURE).map(T => T.group))];
         html += `<label class="ed-field ed-pal-select" for="ed-pal"><span>Предмет</span><select id="ed-pal">${groups.map(gr => `<optgroup label="${gr}">${
-          Object.entries(FURNITURE).filter(([, T]) => T.group === gr).map(([key, T]) => `<option value="${key}" ${palette.furniture === key ? 'selected' : ''}>${T.name}</option>`).join('')}</optgroup>`).join('')}</select></label>`;
+          Object.entries(FURNITURE).filter(([, T]) => T.group === gr).map(([key, T]) => `<option value="${key}" ${palette.furniture === key ? 'selected' : ''}>${T.name}</option>`).join('')}</optgroup>`).join('')}</select></label>
+          <div class="ed-btnrow"><button type="button" id="ed-place-center">Поставить в центр плана</button></div>`;
       }
       const sk = skylights();
       if (tool === 'select' && sk.length) {
@@ -1393,6 +1396,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       for (const [id, dv] of [['ed-frl', -90], ['ed-frr', 90]]) props.querySelector('#' + id)?.addEventListener('click', () => { begin(); setRot((it.rot ?? 0) + dv); commit(); });
     }
     props.querySelector('#ed-pal')?.addEventListener('change', e => { palette.furniture = e.target.value; });
+    props.querySelector('#ed-place-center')?.addEventListener('click', () => {
+      palette.furniture = props.querySelector('#ed-pal')?.value ?? palette.furniture;
+      placeFurniture([view.x + view.w / 2, view.y + view.w / aspect() / 2]);
+    });
     props.querySelectorAll('[data-pal]').forEach(b => b.addEventListener('click', () => {
       palette[tool] = b.dataset.pal;
       propsKey = null;
