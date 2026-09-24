@@ -1,0 +1,36 @@
+{
+  "name": "Пример дома (заменится на размеры из чертежей)",
+  "units": "m",
+  "floors": [
+    {
+      "name": "1 этаж",
+      "elevation": 0,
+      "height": 2.8,
+      "slab": 0.25,
+      "walls": [
+        { "id": "N", "from": [0, 0],   "to": [10, 0],  "thickness": 0.4 },
+        { "id": "E", "from": [10, 0],  "to": [10, 8],  "thickness": 0.4 },
+        { "id": "S", "from": [10, 8],  "to": [0, 8],   "thickness": 0.4 },
+        { "id": "W", "from": [0, 8],   "to": [0, 0],   "thickness": 0.4 },
+        { "id": "i1", "from": [6, 0],  "to": [6, 8],   "thickness": 0.15 },
+        { "id": "i2", "from": [6, 4.5], "to": [10, 4.5], "thickness": 0.15 }
+      ],
+      "openings": [
+        { "wall": "S",  "type": "door",   "offset": 1.5, "width": 1.0, "height": 2.1 },
+        { "wall": "S",  "type": "window", "offset": 5.0, "width": 2.0, "height": 1.5, "sill": 0.8 },
+        { "wall": "N",  "type": "window", "offset": 1.5, "width": 1.8, "height": 1.5, "sill": 0.8 },
+        { "wall": "N",  "type": "window", "offset": 7.4, "width": 1.2, "height": 1.2, "sill": 1.0 },
+        { "wall": "E",  "type": "window", "offset": 1.6, "width": 1.2, "height": 1.4, "sill": 0.9 },
+        { "wall": "W",  "type": "window", "offset": 2.5, "width": 2.4, "height": 1.6, "sill": 0.7 },
+        { "wall": "i1", "type": "door",   "offset": 5.5, "width": 0.9, "height": 2.1 },
+        { "wall": "i2", "type": "door",   "offset": 1.0, "width": 0.8, "height": 2.1 }
+      ],
+      "rooms": [
+        { "name": "Гостиная-кухня", "polygon": [[0, 0], [6, 0], [6, 8], [0, 8]],     "color": "#d8c4a0" },
+        { "name": "Спальня",        "polygon": [[6, 0], [10, 0], [10, 4.5], [6, 4.5]], "color": "#b9cfd8" },
+        { "name": "Прихожая",       "polygon": [[6, 4.5], [10, 4.5], [10, 8], [6, 8]], "color": "#cfc9bd" }
+      ]
+    }
+  ],
+  "roof": { "type": "gable", "pitch": 30, "overhang": 0.5, "color": "#7a3b2e" }
+}

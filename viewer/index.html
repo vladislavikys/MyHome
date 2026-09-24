@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Мой дом 3D</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; overflow: hidden; }
+    #app { position: fixed; inset: 0; }
+    #panel {
+      position: fixed; top: 12px; left: 12px; right: 12px; max-width: 360px;
+      background: rgba(255,255,255,.92); border-radius: 10px; padding: 10px 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.12); font-size: 14px; color: #222;
+    }
+    #panel h1 { font-size: 15px; margin: 0 0 8px; }
+    #panel .row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+    #panel button { font: inherit; padding: 4px 10px; border: 1px solid #bbb; border-radius: 6px; background: #fff; cursor: pointer; }
+    #panel select { font: inherit; }
+    #error { color: #b00020; white-space: pre-wrap; }
+    .label {
+      font-size: 12px; background: rgba(255,255,255,.85); padding: 2px 6px;
+      border-radius: 4px; color: #222; white-space: nowrap; pointer-events: none;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="panel">
+    <h1 id="title">Загрузка…</h1>
+    <div class="row">
+      <label><input type="checkbox" id="roof" checked> Крыша</label>
+      <label><input type="checkbox" id="labels" checked> Подписи</label>
+      <label>Этажи: <select id="floors"></select></label>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="top">Вид сверху</button>
+      <button id="reset">3D вид</button>
+    </div>
+    <div id="error"></div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
