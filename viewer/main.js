@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { computeRooms } from './rooms.js';
+import { createEditor } from './editor.js';
+import { openStore, downloadJson } from './store.js';
 
 // Координаты плана [x, y] (метры) переводятся в 3D как (x, высота, y).
 // Высоты — абсолютные отметки, 0.000 = чистый пол 1-го этажа.
@@ -53,8 +56,14 @@ const doorMat = new THREE.MeshStandardMaterial({ color: '#6d4a2f' });
 const skylightMat = new THREE.MeshStandardMaterial({ color: '#2f4454', roughness: 0.2, side: THREE.DoubleSide });
 
 // Плоскости срезки: стены группы обрезаются снизу скатами крыши, так получаются фронтоны.
-const clipPlanes = {};
+let clipPlanes = {};
 const matCache = new Map();
+
+function resetMaterials() {
+  for (const m of matCache.values()) m.dispose();
+  matCache.clear();
+  clipPlanes = {};
+}
 
 function material(color, clip, opts = {}) {
   const key = `${color}|${clip ?? ''}|${JSON.stringify(opts)}`;
@@ -156,15 +165,6 @@ function buildWall(wall, openings, floor, defaults) {
   return g;
 }
 
-function polygonArea(p) {
-  let s = 0;
-  for (let i = 0; i < p.length; i++) {
-    const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length];
-    s += x1 * y2 - x2 * y1;
-  }
-  return Math.abs(s) / 2;
-}
-
 function toShape(poly) {
   return new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x, -y)));
 }
@@ -179,18 +179,28 @@ function slab(outline, holes, top, depth, mat) {
   return m;
 }
 
-function roomLabel(room, h) {
-  const c = room.label ?? room.polygon
-    .reduce((s, [x, y]) => [s[0] + x, s[1] + y], [0, 0])
-    .map(v => v / room.polygon.length);
+function roomLabel(text, x, y, h) {
   const div = document.createElement('div');
   div.className = 'label';
-  const area = room.area ?? polygonArea(room.polygon);
-  div.textContent = `${room.name} · ${area.toFixed(2)} м²`;
+  div.textContent = text;
   const label = new CSS2DObject(div);
-  label.position.set(c[0], h, c[1]);
+  label.position.set(x, h, y);
   label.userData.isLabel = true;
   return label;
+}
+
+// Пол помещения из горизонтальных полос ячеек, найденных rooms.js.
+function regionMesh(runs, h, color) {
+  const pos = [];
+  for (const [a, b, y] of runs) {
+    const y1 = y + 0.05;
+    pos.push(a, h, y, b, h, y, b, h, y1, a, h, y, b, h, y1, a, h, y1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  const m = mesh(geo, material(color, null, { side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }), false);
+  return m;
 }
 
 function buildFloor(floor, defaults) {
@@ -200,18 +210,19 @@ function buildFloor(floor, defaults) {
     g.add(slab(floor.outline, floor.holes, floor.elevation, slabT, material(floor.slabColor ?? '#9a9a9a')));
   }
 
-  for (const room of floor.rooms ?? []) {
-    if (room.color !== null) {
-      const m = mesh(new THREE.ShapeGeometry(toShape(room.polygon)),
-        material(room.color ?? '#d9d4c7', null, { polygonOffset: true, polygonOffsetFactor: -1 }), false);
-      m.rotation.x = -Math.PI / 2;
-      m.position.y = (room.level ?? floor.elevation) + 0.005;
-      g.add(m);
-    }
-    g.add(roomLabel(room, (room.level ?? floor.elevation) + 0.05));
+  const { regions, rooms } = computeRooms(floor);
+  for (const reg of regions) {
+    const room = floor.rooms[reg.rooms[0]];
+    g.add(regionMesh(reg.runs, floor.elevation + 0.005, room.color ?? '#d9d4c7'));
   }
+  (floor.rooms ?? []).forEach((room, i) => {
+    if (!room.at) return;
+    const area = rooms[i].area;
+    const text = area != null ? `${room.name} · ${area.toFixed(1)} м²` : room.name;
+    g.add(roomLabel(text, room.at[0], room.at[1], (room.level ?? floor.elevation) + 0.05));
+  });
 
-  const walls = floor.walls.map((w, i) => ({ key: w.id ?? i, w }));
+  const walls = floor.walls.filter(w => !w.virtual).map((w, i) => ({ key: w.id ?? i, w }));
   for (const { key, w } of walls) {
     const ops = (floor.openings ?? []).filter(o => o.wall === key);
     g.add(buildWall(w, ops, floor, defaults));
@@ -292,11 +303,56 @@ const ui = {
   labels: document.getElementById('labels'),
   floors: document.getElementById('floors'),
   error: document.getElementById('error'),
+  edit: document.getElementById('edit'),
 };
 
-const floorGroups = [];
+let floorGroups = [];
 const roofGroup = new THREE.Group();
+scene.add(roofGroup);
 const bounds = new THREE.Box3();
+
+function disposeTree(obj) {
+  obj.traverse(o => {
+    o.geometry?.dispose();
+    if (o.isCSS2DObject) o.element.remove();
+  });
+}
+
+// Полная пересборка 3D-модели из house (после каждой правки в редакторе).
+function build(house) {
+  for (const g of floorGroups) { disposeTree(g); scene.remove(g); }
+  disposeTree(roofGroup);
+  roofGroup.clear();
+  floorGroups = [];
+  resetMaterials();
+  const defaults = { wallColor: house.wallColor ?? '#efe9dc', clip: house.wallClip ?? null };
+
+  // Сначала крыша: из её скатов берутся плоскости срезки стен.
+  for (const p of house.roofs ?? []) {
+    const { group, plane } = roofPanel(p);
+    roofGroup.add(group);
+    // Сохраняем то, что под скатом: нормаль плоскости срезки смотрит вниз.
+    if (p.clip) (clipPlanes[p.clip] ??= []).push(plane.clone().negate());
+  }
+
+  house.floors.forEach(f => {
+    const g = buildFloor(f, defaults);
+    floorGroups.push(g);
+    scene.add(g);
+  });
+  for (const s of house.solids ?? []) floorGroups[s.floor ?? 0].add(prism(s));
+  for (const s of house.stairs ?? []) floorGroups[s.floor ?? 0].add(stairs(s));
+
+  if (ui.floors.options.length !== house.floors.length) {
+    ui.floors.innerHTML = '';
+    house.floors.forEach((f, i) => ui.floors.add(new Option(i === house.floors.length - 1 ? 'все' : f.name, i)));
+    ui.floors.value = house.floors.length - 1;
+  }
+  bounds.makeEmpty();
+  floorGroups.forEach(g => bounds.expandByObject(g));
+  bounds.expandByObject(roofGroup);
+  applyVisibility();
+}
 
 function applyVisibility() {
   const upTo = Number(ui.floors.value);
@@ -318,53 +374,20 @@ function view(mode) {
   controls.update();
 }
 
-async function load() {
-  const res = await fetch('house.json', { cache: 'no-store' });
-  if (!res.ok) throw new Error(`house.json: HTTP ${res.status}`);
-  const house = await res.json();
-  const defaults = { wallColor: house.wallColor ?? '#efe9dc', clip: house.wallClip ?? null };
-
-  ui.title.textContent = house.name ?? 'Мой дом';
-
-  // Сначала крыша: из её скатов берутся плоскости срезки стен.
-  for (const p of house.roofs ?? []) {
-    const { group, plane } = roofPanel(p);
-    roofGroup.add(group);
-    // Сохраняем то, что под скатом: нормаль плоскости срезки смотрит вниз.
-    if (p.clip) (clipPlanes[p.clip] ??= []).push(plane.clone().negate());
-  }
-
-  house.floors.forEach((f, i) => {
-    const g = buildFloor(f, defaults);
-    floorGroups.push(g);
-    scene.add(g);
-    ui.floors.add(new Option(i === house.floors.length - 1 ? 'все' : f.name, i));
-  });
-  ui.floors.value = house.floors.length - 1;
-
-  for (const s of house.solids ?? []) floorGroups[s.floor ?? 0].add(prism(s));
-  for (const s of house.stairs ?? []) floorGroups[s.floor ?? 0].add(stairs(s));
-
-  scene.add(roofGroup);
-  floorGroups.forEach(g => bounds.expandByObject(g));
-  bounds.expandByObject(roofGroup);
-  applyVisibility();
-  view('3d');
-}
-
 ui.roof.onchange = ui.labels.onchange = ui.floors.onchange = applyVisibility;
 document.getElementById('top').onclick = () => { ui.roof.checked = false; applyVisibility(); view('top'); };
 document.getElementById('reset').onclick = () => view('3d');
 
 function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
+  const w = app.clientWidth, h = app.clientHeight;
+  if (!w || !h) return;
   renderer.setSize(w, h);
   labelRenderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
+new ResizeObserver(() => { resize(); editor.resize(); }).observe(app);
 window.addEventListener('resize', resize);
-resize();
 
 renderer.setAnimationLoop(() => {
   controls.update();
@@ -372,6 +395,106 @@ renderer.setAnimationLoop(() => {
   labelRenderer.render(scene, camera);
 });
 
+// ---------- редактор и сохранение ----------
+
+let house = null;
+let original = null;
+let store = null;
+let saveTimer = null;
+let editorOpened = false;
+
+const editor = createEditor(document.getElementById('editor'), {
+  onChange(h) {
+    build(h);
+    scheduleSave();
+  },
+  onFloor(i) {
+    ui.floors.value = i;
+    ui.roof.checked = false;
+    applyVisibility();
+  },
+});
+
+function setStatus(text) { editor.setStatus(text); }
+
+function scheduleSave() {
+  if (!store) return;
+  setStatus('Сохраняю…');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await store.save(house);
+      setStatus(store.kind === 'shared' ? 'Сохранено в проекте' : 'Сохранено в этом браузере');
+    } catch (e) {
+      setStatus(e?.code === 'invalid_argument' || e?.code === 'read_only'
+        ? 'Только просмотр: изменения не сохраняются'
+        : 'Не сохранилось. Правки остались на экране, повторю при следующем изменении.');
+    }
+  }, 700);
+}
+
+function setEditing(on) {
+  document.body.classList.toggle('editing', on);
+  ui.edit.setAttribute('aria-pressed', on);
+  if (on) {
+    if (!editorOpened) { editorOpened = true; editor.setFloor(house.floors.length - 1); }
+    else editor.setFloor(editor.floor);
+  }
+  requestAnimationFrame(() => { resize(); editor.fit(); });
+}
+
+ui.edit.onclick = () => setEditing(!document.body.classList.contains('editing'));
+editor.onClose(() => setEditing(false));
+editor.onDownload(async () => {
+  try { await downloadJson(house); } catch (e) {
+    if (e?.code !== 'declined') setStatus('Скачать не удалось. Попробуйте ещё раз.');
+  }
+});
+
+let resetArmed = false;
+editor.onReset(() => {
+  const btn = document.getElementById('ed-reset');
+  if (!resetArmed) {
+    resetArmed = true;
+    btn.textContent = 'Точно вернуть? Нажмите ещё раз';
+    setTimeout(() => { resetArmed = false; btn.textContent = 'Вернуть проект'; }, 3500);
+    return;
+  }
+  resetArmed = false;
+  btn.textContent = 'Вернуть проект';
+  house = structuredClone(original);
+  editor.setHouse(house, { keepView: true });
+  build(house);
+  scheduleSave();
+});
+
+async function load() {
+  const res = await fetch('house.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`house.json: HTTP ${res.status}`);
+  original = await res.json();
+  house = structuredClone(original);
+  ui.title.textContent = house.name ?? 'Мой дом';
+  build(house);
+  editor.setHouse(house);
+  view('3d');
+
+  // Сохранённая версия появляется позже, когда хранилище ответит.
+  store = await openStore();
+  setStatus(store.kind === 'shared' ? 'Правки сохраняются в проекте' : 'Правки сохраняются в этом браузере');
+  try {
+    const saved = await store.load();
+    if (saved?.floors) {
+      house = saved;
+      build(house);
+      editor.setHouse(house, { keepView: true });
+      setStatus(store.kind === 'shared' ? 'Загружена сохранённая версия' : 'Загружена версия из этого браузера');
+    }
+  } catch {
+    setStatus('Сохранённую версию загрузить не удалось, показан проект');
+  }
+}
+
+resize();
 load().catch(e => {
   console.error(e);
   ui.title.textContent = 'Ошибка';
@@ -380,4 +503,4 @@ load().catch(e => {
 });
 
 // Для отладки и скриншотов из консоли.
-window.viewer = { camera, controls, view, applyVisibility, ui };
+window.viewer = { camera, controls, view, applyVisibility, ui, editor, get house() { return house; } };
