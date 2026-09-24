@@ -423,7 +423,11 @@ function fachwerk(wall, openings, floor, fz) {
     g.add(m);
   };
 
-  const x0 = -t / 2, x9 = L + t / 2;
+  // у наружного угла брус продлевается на полтолщины стены; у внутреннего (эркер, ниша) — наоборот, заканчивается
+  // у грани соседней стены, иначе стойка выходит на её внутреннюю поверхность тёмной полосой
+  const concave = (px, py, dir) => pointInPoly(px + u[0] * dir * (t / 2 + 0.06) + n[0] * side * (t / 2 + 0.06),
+    py + u[1] * dir * (t / 2 + 0.06) + n[1] * side * (t / 2 + 0.06), outline);
+  const x0 = concave(x1, y1, -1) ? t / 2 : -t / 2, x9 = concave(x2, y2, 1) ? L - t / 2 : L + t / 2;
   const ops = [...openings].sort((a, b) => a.offset - b.offset)
     .map(o => ({ a: o.offset, b: o.offset + o.width, lo: o.sill ?? 0, hi: (o.sill ?? 0) + o.height }));
 
