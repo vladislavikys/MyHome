@@ -5,6 +5,7 @@ import { textureSet } from './looks.js';
 // Мебель: { type, at: [x, y], rot (°), w?, d? (м), color? }. Лицевая сторона — к +y на плане (при rot = 0).
 
 export const FLOOR_FINISHES = {
+  herringbone: 'Керамогранит «ёлочка»',
   floor: 'Паркет / ламинат',
   tiles: 'Плитка',
   stone: 'Керамогранит под камень',

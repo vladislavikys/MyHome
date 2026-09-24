@@ -125,6 +125,40 @@ const KINDS = {
       return [0.6 + 0.25 * h + 0.15 * f, 0.6 * h + 0.4 * f];
     }; })(),
   },
+  herringbone: {  // керамогранит под дерево «ёлочкой»: плитка 1×4 (≈15×60 см), тонкая затирка, волокна вдоль плитки
+    tile: 1.2, mat: { roughness: 0.45 }, normalStrength: 1.6,
+    fn: (() => {
+      const n = 4, K = 2 * n;                                  // период ёлочки — 2n×2n ширин плитки
+      const ns = N(161), knot = makeNoise(167, 64);
+      const tone = (a, b, c) => { let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791); h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+      // решётка ёлочки: сдвиги (1,1) вдоль зигзага и (n,−n) между рядами
+      const plank = (px, py) => {
+        const r0 = Math.floor((px - py + 1) / K);
+        for (const r of [r0, r0 - 1, r0 + 1]) {
+          const qx = px - r * n, qy = py + r * n;
+          let i = Math.floor(qy);                                // горизонтальная: [i, i+n] × [i, i+1]
+          if (qx >= i && qx < i + n) return { id: tone(i, r, 1), along: qx - i, across: qy - i, len: n };
+          i = Math.floor(qx) - n;                                // вертикальная: [i+n, i+n+1] × [i+1−n, i+1]
+          if (qy >= i + 1 - n && qy < i + 1) return { id: tone(i, r, 2), along: qy - (i + 1 - n), across: qx - (i + n), len: n };
+        }
+        return null;
+      };
+      return (u, v) => {
+        const pl = plank(u * K, v * K);
+        if (!pl) return [0.5, 0];
+        const edge = Math.min(pl.across, 1 - pl.across, pl.along, pl.len - pl.along);
+        if (edge < 0.022) return [[0.66, 0.64, 0.6], 0.1];       // тонкая светло-серая затирка
+        const off = pl.id * 17;
+        const g = fbm(ns, pl.along * 0.6 + off, pl.across * 5 + off);
+        const lines = 0.5 + 0.5 * Math.sin((pl.across * 26 + g * 7 + Math.sin(pl.along * 1.3 + off) * 1.2) * Math.PI);
+        const k = knot(pl.along * 3 + off, pl.across * 3);
+        const base = 0.82 + (pl.id - 0.5) * 0.12;
+        const a = base * (0.9 + 0.1 * lines - 0.06 * Math.max(0, k - 0.75) * 4);
+        const bevel = Math.min(1, edge / 0.05);
+        return [[a * 1.02, a, a * 0.95], 0.55 * bevel + 0.08 * lines];
+      };
+    })(),
+  },
   floor: {  // паркетная / инженерная доска
     tile: 2.4, mat: { roughness: 0.45 }, normalStrength: 4,
     fn: (() => { const ns = N(31); const r = rng(5); const tones = Array.from({ length: 64 }, () => 0.78 + r() * 0.2); return (u, v) => {
