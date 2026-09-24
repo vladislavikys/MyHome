@@ -605,9 +605,11 @@ function prism(s) {
 // Лестница: каждая ступень — проступь-плита по своему многоугольнику (марши и забежные).
 function stairs(s) {
   const g = new THREE.Group();
-  const mat = material(s.color ?? '#b08a5a', null, { kind: 'floor', side: THREE.DoubleSide });
+  // гладкие ступени: цельное дерево без рисунка досок (texture — по желанию)
+  const mat = material(s.color ?? '#b08a5a', null, { kind: s.texture ?? null, side: THREE.DoubleSide, roughness: 0.42 });
   const t = s.thickness ?? 0.05;
-  for (const { poly, lead, top } of stairSteps(s)) {
+  const all = stairSteps(s);
+  for (const { poly, lead, top } of all) {
     const m = slab(poly, null, top, t, mat);
     m.castShadow = true;
     g.add(m);
@@ -624,6 +626,34 @@ function stairs(s) {
       }
     }
   }
+  // последний подступенок — от верхней ступени до пола следующего этажа, по задней кромке
+  const last = all.at(-1);
+  if (last && !last.landing && last.poly.length === 4 && s.risersClosed !== false) {
+    const [a, b] = [last.poly[1], last.poly[2]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]), h = s.h[1] - last.top;
+    if (len > 0.05 && h > 0.01) {
+      const r = box(len, h + t, 0.03, mat);
+      r.position.set((a[0] + b[0]) / 2, last.top - t + (h + t) / 2, (a[1] + b[1]) / 2);
+      r.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
+      g.add(r);
+    }
+  }
+  return g;
+}
+
+// Стенка произвольного профиля: вдоль отрезка from→to, профиль [[t, h], …] (t — от начала, h — от пола).
+// Например, стенка под маршем, повторяющая низ ступеней.
+function panelSolid(s, elevation) {
+  const [x1, y1] = s.from, [x2, y2] = s.to;
+  const th = s.thickness ?? 0.1;
+  const shape = new THREE.Shape(s.profile.map(([u, h]) => new THREE.Vector2(u, h)));
+  const m = mesh(new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false }), material(s.color ?? '#efe9dc', null, { kind: s.texture ?? 'plaster' }));
+  m.position.z = -th / 2;
+  m.userData.collide = true;
+  const g = new THREE.Group();
+  g.position.set(x1, elevation, y1);
+  g.rotation.y = -Math.atan2(y2 - y1, x2 - x1);
+  g.add(m);
   return g;
 }
 
@@ -758,7 +788,7 @@ function build(house) {
     floorGroups.push(g);
     scene.add(g);
   });
-  for (const s of house.solids ?? []) floorGroups[s.floor ?? 0].add(prism(s));
+  for (const s of house.solids ?? []) floorGroups[s.floor ?? 0].add(s.type === 'panel' ? panelSolid(s, house.floors[s.floor ?? 0].elevation) : prism(s));
   for (const s of house.stairs ?? []) floorGroups[s.floor ?? 0].add(stairs(s));
   for (const r of house.railings ?? []) {
     const fi = r.floor ?? 0;
