@@ -634,6 +634,13 @@ export function createEditor(root, { onChange, onFloor }) {
       `<label class="ed-field" for="${id}"><span>${label}</span><input id="${id}" value="${value}" ${attrs}></label>`;
     const num = (id, label, value, step = 0.05) =>
       field(id, label, r2(value), `type="number" inputmode="decimal" step="${step}" min="0"`);
+    // число + ползунок: 3D меняется прямо во время перетаскивания
+    const slider = (id, label, value, min, max, step = 0.05) =>
+      `<label class="ed-field ed-slider" for="${id}"><span>${label}</span>
+        <span class="ed-slider-row">
+          <input id="${id}-r" type="range" min="${min}" max="${max}" step="${step}" value="${r2(value)}" aria-label="${label}">
+          <input id="${id}" type="number" inputmode="decimal" step="${step}" min="${min}" max="${max}" value="${r2(value)}">
+        </span></label>`;
     let html = '';
     if (!sel) {
       html = `<p class="ed-hint">${TOOLS.find(t => t[0] === tool)[2]}</p>`;
@@ -655,17 +662,17 @@ export function createEditor(root, { onChange, onFloor }) {
           <label class="ed-field" for="ed-type"><span>Тип</span><select id="ed-type">
             ${Object.entries(TYPE_NAMES).map(([v, n]) => `<option value="${v}" ${o.type === v ? 'selected' : ''}>${n}</option>`).join('')}
           </select></label>
-          ${num('ed-w', 'Ширина, м', o.width)}
-          ${num('ed-h', 'Высота, м', o.height)}
-          ${num('ed-sill', 'Низ от пола, м', o.sill ?? 0)}
           ${num('ed-off', 'От начала стены, м', o.offset)}
+          ${slider('ed-w', 'Ширина, м', o.width, 0.4, o.type === 'window' ? 3 : 2.4)}
+          ${slider('ed-h', 'Высота, м', o.height, 0.4, 2.7)}
+          ${o.type === 'window' ? slider('ed-sill', 'Низ окна от пола, м', o.sill ?? 0, 0, 1.8) : ''}
         </div>`;
     } else if (sel.kind === 'skylight') {
       const s = sel.win;
       html = `<div class="ed-props-head"><strong>Мансардное окно</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
         <div class="ed-grid">
-          ${num('ed-sw', 'Ширина, м', s.x[1] - s.x[0])}
-          ${num('ed-sl', 'Длина на плане, м', s.y[1] - s.y[0])}
+          ${slider('ed-sw', 'Ширина, м', s.x[1] - s.x[0], 0.4, 1.6)}
+          ${slider('ed-sl', 'Высота по скату, м', (s.y[1] - s.y[0]) * slopeK(sel.roof), 0.5, 2.0)}
         </div>`;
     } else if (sel.kind === 'room') {
       const r = sel.room;
@@ -681,9 +688,20 @@ export function createEditor(root, { onChange, onFloor }) {
     const on = (id, fn) => {
       const el = props.querySelector('#' + id);
       if (!el) return;
-      el.addEventListener('focus', begin);
-      el.addEventListener('input', () => { begin(); fn(el); render(); });
-      el.addEventListener('change', () => { fn(el); commit(); });
+      const range = props.querySelector('#' + id + '-r');
+      const pair = [el, range].filter(Boolean);
+      for (const inp of pair) {
+        const other = pair.find(x => x !== inp);
+        inp.addEventListener('focus', begin);
+        inp.addEventListener('input', () => {
+          begin();
+          if (other) other.value = inp.value;
+          fn(inp);
+          render();
+          live();
+        });
+        inp.addEventListener('change', () => { fn(inp); commit(); });
+      }
     };
     props.querySelector('#ed-del')?.addEventListener('click', deleteSelected);
     if (sel?.kind === 'wall') {
@@ -703,19 +721,53 @@ export function createEditor(root, { onChange, onFloor }) {
       const w = walls().find(x => x.id === o.wall);
       const clamp = () => { const L = wallGeom(w).len; o.width = Math.min(o.width, r2(L)); o.offset = r2(Math.max(0, Math.min(L - o.width, o.offset))); };
       on('ed-type', el => { o.type = el.value; if (o.type !== 'window') o.sill = 0; });
-      on('ed-w', el => { const v = parseFloat(el.value); if (v > 0.2) { o.width = v; clamp(); } });
+      on('ed-w', el => {
+        const v = parseFloat(el.value);
+        if (!(v > 0.2)) return;
+        const c = o.offset + o.width / 2;   // ширина меняется от центра
+        o.width = r2(v);
+        o.offset = r2(c - o.width / 2);
+        clamp();
+      });
       on('ed-h', el => { const v = parseFloat(el.value); if (v > 0.2) o.height = v; });
       on('ed-sill', el => { const v = parseFloat(el.value); if (v >= 0) o.sill = v; });
       on('ed-off', el => { const v = parseFloat(el.value); if (v >= 0) { o.offset = v; clamp(); } });
     } else if (sel?.kind === 'skylight') {
       const s = sel.win;
-      on('ed-sw', el => { const v = parseFloat(el.value); if (v > 0.3) s.x = [s.x[0], r2(s.x[0] + v)]; });
-      on('ed-sl', el => { const v = parseFloat(el.value); if (v > 0.3) s.y = [s.y[0], r2(s.y[0] + v)]; });
+      const k = slopeK(sel.roof);
+      on('ed-sw', el => {
+        const v = parseFloat(el.value);
+        if (!(v > 0.3)) return;
+        const c = (s.x[0] + s.x[1]) / 2;
+        s.x = [r2(c - v / 2), r2(c + v / 2)];
+      });
+      on('ed-sl', el => {
+        const v = parseFloat(el.value) / k;   // по скату → на плане
+        if (!(v > 0.2)) return;
+        const c = (s.y[0] + s.y[1]) / 2;
+        s.y = [r2(c - v / 2), r2(c + v / 2)];
+      });
     } else if (sel?.kind === 'room') {
       const r = sel.room;
       on('ed-room-name', el => { r.name = el.value; });
       on('ed-room-color', el => { r.color = el.value; });
     }
+  }
+
+  // Во сколько раз длина по скату больше длины на плане.
+  function slopeK(roof) {
+    if (!roof) return 1;
+    const hs = roof.corners.map(c => c[2]);
+    const hi = roof.corners[hs.indexOf(Math.max(...hs))], lo = roof.corners[hs.indexOf(Math.min(...hs))];
+    const dy = Math.abs(hi[1] - lo[1]), dh = hi[2] - lo[2];
+    return dy > 1e-6 ? Math.hypot(dy, dh) / dy : 1;
+  }
+
+  // Живое обновление 3D во время перетаскивания ползунка (не чаще ~8 раз в секунду).
+  let liveTimer = null;
+  function live() {
+    if (liveTimer) return;
+    liveTimer = setTimeout(() => { liveTimer = null; onChange(house); }, 120);
   }
 
   function refreshReadouts() {
@@ -761,5 +813,20 @@ export function createEditor(root, { onChange, onFloor }) {
     resize() { if (view) { render(); } },
     fit,
     setTool,
+    // Выбрать проём или мансардное окно (например, по нажатию в 3D).
+    select(target) {
+      setTool('select');
+      if (target.kind === 'opening') {
+        const fi = house.floors.findIndex(f => (f.openings ?? []).includes(target.opening));
+        if (fi < 0) return;
+        if (fi !== floorIdx) setFloor(fi);
+        sel = { kind: 'opening', opening: target.opening, wall: walls().find(w => w.id === target.opening.wall) };
+      } else if (target.kind === 'skylight') {
+        const top = house.floors.length - 1;
+        if (floorIdx !== top) setFloor(top);
+        sel = { kind: 'skylight', roof: target.roof, win: target.win };
+      }
+      render();
+    },
   };
 }

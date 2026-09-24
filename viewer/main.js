@@ -161,6 +161,7 @@ function buildWall(wall, openings, floor, defaults) {
     piece(a, b, 0, sill);
     piece(a, b, sill + o.height, H);
     const fill = openingFill(o, t);
+    fill.userData.pick = { kind: 'opening', opening: o };
     fill.position.set((a + b) / 2, sill, 0);
     g.add(fill);
     cursor = b;
@@ -404,7 +405,9 @@ function roofPanel(p) {
     const wg = new THREE.BufferGeometry();
     wg.setAttribute('position', new THREE.Float32BufferAttribute([...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]], 3));
     wg.computeVertexNormals();
-    g.add(mesh(wg, skylightMat, false));
+    const sm = mesh(wg, skylightMat, false);
+    sm.userData.pick = { kind: 'skylight', roof: p, win: w };
+    g.add(sm);
   }
   return { group: g, plane };
 }
@@ -538,6 +541,28 @@ walkUi.exitWalk.onclick = () => {
   controls.enabled = true;
   view('3d');
 };
+
+// Нажатие на окно в 3D открывает его в редакторе.
+const picker = new THREE.Raycaster();
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', ev => { downAt = [ev.clientX, ev.clientY]; });
+renderer.domElement.addEventListener('pointerup', ev => {
+  if (walk.active || !downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  picker.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
+  for (const hit of picker.intersectObjects(scene.children, true)) {
+    let o = hit.object, visible = true;
+    for (let q = o; q; q = q.parent) if (!q.visible) visible = false;
+    if (!visible) continue;
+    while (o && !o.userData.pick) o = o.parent;
+    if (o) {
+      if (!document.body.classList.contains('editing')) setEditing(true);
+      editor.select(o.userData.pick);
+      return;
+    }
+    if (hit.object.material?.transparent !== true) return; // первое непрозрачное — не окно
+  }
+});
 
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
