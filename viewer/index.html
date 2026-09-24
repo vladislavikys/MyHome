@@ -141,6 +141,27 @@
       .walk-hint-touch { display: inline; }
     }
 
+    /* ---------- экскурсия ---------- */
+    #tourbar { display: none; }
+    body.touring #panel { display: none; }
+    body.touring #tourbar { display: block; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+    #stop-tour {
+      position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; pointer-events: auto;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+    }
+    #tour-caption {
+      position: absolute; left: 50%; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 8px);
+      font: 600 clamp(20px, 3.4vw, 34px)/1.15 var(--font); letter-spacing: .01em; color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,.55), 0 0 18px rgba(0,0,0,.35);
+      opacity: 0; transition: opacity .8s ease, transform .8s ease; white-space: nowrap;
+    }
+    #tour-caption.show { opacity: 1; transform: translate(-50%, 0); }
+    #tour-track {
+      position: absolute; left: 16px; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+      height: 3px; background: rgba(255,255,255,.35); border-radius: 2px; overflow: hidden;
+    }
+    #tour-progress { height: 100%; background: var(--accent); transform-origin: 0 50%; transform: scaleX(0); }
+
     /* ---------- редактор ---------- */
     #editor {
       position: fixed; top: 0; right: 0; bottom: 0; width: var(--panel-w);
@@ -241,6 +262,7 @@
       <div class="row">
         <button type="button" id="top">Вид сверху</button>
         <button type="button" id="reset">3D вид</button>
+        <button type="button" id="tour">Экскурсия</button>
         <button type="button" id="walk">Прогулка</button>
         <button type="button" id="edit" aria-pressed="false">Редактировать план</button>
       </div>
@@ -251,6 +273,11 @@
       <span class="walk-hint walk-hint-keys">WASD — идти · тянуть мышью — смотреть · Shift — быстрее · Space / C — вверх / вниз в полёте · Esc — выход</span>
       <span class="walk-hint walk-hint-touch">Джойстик — идти · свайп по экрану — смотреть</span>
       <button type="button" id="exit-walk">Выйти</button>
+    </div>
+    <div id="tourbar">
+      <button type="button" id="stop-tour">Остановить экскурсию</button>
+      <div id="tour-caption" aria-live="polite"></div>
+      <div id="tour-track"><div id="tour-progress"></div></div>
     </div>
     <div id="joy" aria-label="Джойстик движения"><span></span></div>
     <div id="fly-buttons">

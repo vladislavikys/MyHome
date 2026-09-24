@@ -5,6 +5,7 @@ import { computeRooms } from './rooms.js';
 import { createEditor } from './editor.js';
 import { openStore, downloadJson } from './store.js';
 import { createWalk } from './walk.js';
+import { createTour } from './tour.js';
 
 // Координаты плана [x, y] (метры) переводятся в 3D как (x, высота, y).
 // Высоты — абсолютные отметки, 0.000 = чистый пол 1-го этажа.
@@ -123,7 +124,16 @@ function openingFill(o, t) {
     const n = Math.max(1, Math.round(o.width / 0.9));
     for (let i = 1; i < n; i++) add(0.04, o.height, -o.width / 2 + (o.width * i) / n, o.height / 2, frameMat);
   } else {
-    add(o.width - 2 * f, o.height - f, 0, (o.height - f) / 2, doorMat);
+    // полотно открыто внутрь (на сторону +z, как дуга в редакторе), петли у начала проёма;
+    // закрытая дверь — "open": 0
+    const leafW = o.width - 2 * f;
+    const leaf = box(leafW, o.height - f, 0.04, doorMat);
+    const hinge = new THREE.Group();
+    hinge.position.set(-o.width / 2 + f, 0, d / 2);
+    hinge.rotation.y = -THREE.MathUtils.degToRad(o.open ?? 80);
+    leaf.position.set(leafW / 2, (o.height - f) / 2, 0.02);
+    hinge.add(leaf);
+    g.add(hinge);
   }
   return g;
 }
@@ -564,10 +574,33 @@ renderer.domElement.addEventListener('pointerup', ev => {
   }
 });
 
+const tour = createTour({
+  camera,
+  ui: { caption: document.getElementById('tour-caption'), progress: document.getElementById('tour-progress') },
+});
+function startTour() {
+  if (walk.active) walkUi.exitWalk.click();
+  if (document.body.classList.contains('editing')) setEditing(false);
+  controls.enabled = false;
+  ui.floors.value = floorGroups.length - 1;
+  ui.roof.checked = true;
+  applyVisibility();
+  if (!tour.start(house.tour)) controls.enabled = true;
+}
+function stopTour() {
+  tour.stop();
+  controls.enabled = true;
+  view('3d');
+}
+document.getElementById('tour').onclick = startTour;
+document.getElementById('stop-tour').onclick = stopTour;
+window.addEventListener('keydown', ev => { if (tour.active && ev.key === 'Escape') stopTour(); });
+
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
-  if (walk.active) walk.update(dt);
+  if (tour.active) tour.update();
+  else if (walk.active) walk.update(dt);
   else controls.update();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -681,4 +714,4 @@ load().catch(e => {
 });
 
 // Для отладки и скриншотов из консоли.
-window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, get house() { return house; } };
+window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, tour, get house() { return house; } };
