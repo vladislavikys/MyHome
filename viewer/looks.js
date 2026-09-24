@@ -90,6 +90,17 @@ const KINDS = {
       return [a, grain * 0.6];
     }; })(),
   },
+  'fence-wood': {  // вертикальные доски под дерево (панели забора и ворот)
+    tile: 1.2, mat: { roughness: 0.6 }, normalStrength: 2.5,
+    fn: (() => { const ns = N(23); const r = rng(9); const tones = Array.from({ length: 16 }, () => 0.72 + r() * 0.26); return (u, v) => {
+      const cols = 8, col = Math.floor(u * cols), fu = u * cols - col;
+      const gap = fu < 0.025;
+      const grain = 0.5 + 0.5 * Math.sin((u * 70 + fbm(ns, u * 2, v * 1.2) * 5) * Math.PI);
+      const knot = fbm(ns, u * 6 + col, v * 3);
+      const a = tones[col % 16] * (0.84 + 0.1 * grain + 0.1 * knot);
+      return [gap ? 0.35 : a, gap ? 0 : 0.55 + 0.25 * grain];
+    }; })(),
+  },
   floor: {  // паркетная / инженерная доска
     tile: 2.4, mat: { roughness: 0.45 }, normalStrength: 4,
     fn: (() => { const ns = N(31); const r = rng(5); const tones = Array.from({ length: 64 }, () => 0.78 + r() * 0.2); return (u, v) => {

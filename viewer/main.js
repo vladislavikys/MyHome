@@ -13,7 +13,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { textureSet, skyTexture, doorTextures } from './looks.js';
+import { textureSet, skyTexture, doorTextures, boxUVs } from './looks.js';
 import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
 import { createPhoto } from './photo.js';
 
@@ -938,44 +938,192 @@ function outbuilding(b) {
   return g;
 }
 
-function fence(boundary, gaps, height = 1.6) {
+// Ворота в старом формате [x, y, полуширина] → объект.
+function normGate(g) {
+  return Array.isArray(g) ? { at: [g[0], g[1]], width: g[2] * 2, type: 'gap' } : g;
+}
+
+// Деталь-брусок с UV в метрах (для подвижных частей, которые не запекаются).
+function part(parent, w, h, d, mat, x, y, z) {
+  const geo = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+  geo.translate(x, y, z);
+  boxUVs(geo);
+  const m = mesh(geo, mat);
+  parent.add(m);
+  return m;
+}
+
+// Панель в стиле «графитовая рама + доска под дерево + вертикальные ламели».
+// Локально: x от 0 до L, y от y0 до y0+H, плоскость z = 0.
+function fencePanel(parent, M, x0, L, y0, H, { slats = [], collide = true } = {}) {
+  const fr = 0.05, th = 0.05;
+  const add = (w, h, d, mat, x, y, z) => { const m = part(parent, w, h, d, mat, x, y, z); if (collide) m.userData.collide = true; return m; };
+  add(L, fr, th, M.metal, x0 + L / 2, y0 + fr / 2, 0);
+  add(L, fr, th, M.metal, x0 + L / 2, y0 + H - fr / 2, 0);
+  add(fr, H, th, M.metal, x0 + fr / 2, y0 + H / 2, 0);
+  add(fr, H, th, M.metal, x0 + L - fr / 2, y0 + H / 2, 0);
+  const rail = y0 + H * 0.3;
+  // зоны ламелей → остальное заполняется доской
+  const zones = slats.map(([a, b]) => [x0 + a * L, x0 + b * L]).sort((p, q) => p[0] - q[0]);
+  let cur = x0 + fr;
+  const wood = (a, b) => {
+    if (b - a < 0.02) return;
+    add(b - a, H - 2 * fr, 0.02, M.wood, (a + b) / 2, y0 + H / 2, 0);
+    add(b - a, 0.045, th, M.metal, (a + b) / 2, rail, 0);
+  };
+  for (const [a, b] of zones) {
+    wood(cur, a);
+    add(0.04, H, th, M.metal, a, y0 + H / 2, 0);
+    add(0.04, H, th, M.metal, b, y0 + H / 2, 0);
+    const n = Math.max(2, Math.round((b - a) / 0.07));
+    for (let i = 1; i < n; i++) add(0.025, H - 2 * fr, 0.04, M.metal, a + (b - a) * i / n, y0 + H / 2, 0);
+    cur = b;
+  }
+  wood(cur, x0 + L - fr);
+}
+
+function pillar(g, M, x, H) {
+  part(g, 0.46, 0.45, 0.46, M.concrete, x, 0.225, 0);
+  const b = part(g, 0.38, H - 0.35, 0.38, M.brick, x, 0.45 + (H - 0.35) / 2 - 0.05, 0);
+  b.userData.collide = true;
+  part(g, 0.46, 0.04, 0.46, M.metal, x, H + 0.07, 0);
+  part(g, 0.34, 0.04, 0.34, M.metal, x, H + 0.11, 0);
+  part(g, 0.2, 0.04, 0.2, M.metal, x, H + 0.15, 0);
+}
+
+function insidePoly(p, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
+// Ворота на ребре забора. Локально: x — вдоль забора, z — поперёк (inside — сторона участка).
+function gateLeaf(eg, M, gate, t0, t1, H, inside, roomPlus, roomMinus) {
+  const w = t1 - t0;
+  const holder = new THREE.Group();
+  holder.userData.dynamic = true;
+  const content = new THREE.Group();
+  holder.add(content);
+  if (gate.type === 'slide') {
+    // откатные: полотно идёт по стороне участка вдоль забора
+    const dir = (roomPlus >= roomMinus ? 1 : -1) * (gate.flip ? -1 : 1);
+    const z = inside * 0.3;
+    holder.position.set(t0, 0, z);
+    fencePanel(content, M, 0.02, w - 0.04, 0.08, H - 0.1, { slats: [[0.56, 0.7]] });
+    // балка-направляющая и ролики
+    part(content, w - 0.04, 0.08, 0.07, M.metal, w / 2, 0.04, 0);
+    // направляющая по земле вдоль хода полотна
+    part(eg, 2 * w, 0.03, 0.1, M.metal, dir > 0 ? t0 + w : t1 - w, 0.015, z);
+    const open = dir * (w + 0.1);
+    holder.userData.door = { kind: 'slide', node: content, closed: 0, opened: open, state: 0, value: 0, reach: w / 2 + 2.5 };
+  } else {
+    // калитка / распашная створка: петли у края t0 (или t1 при flip)
+    const fl = gate.flip ? -1 : 1;
+    holder.position.set(fl > 0 ? t0 : t1, 0, 0);
+    const lx = fl > 0 ? 0 : -w;
+    fencePanel(content, M, lx + 0.02, w - 0.04, 0.08, H - 0.1, { slats: fl > 0 ? [[0.74, 0.86]] : [[0.14, 0.26]] });
+    const hx = fl > 0 ? w * 0.7 : -w * 0.7;
+    for (const s of [-1, 1]) part(content, 0.03, 1.1, 0.03, M.metal, hx, 1.05, s * 0.06);
+    const open = -inside * fl * THREE.MathUtils.degToRad(85);
+    holder.userData.door = { kind: 'swing', node: content, closed: 0, opened: open, state: 0, value: 0, reach: 2.6 };
+  }
+  eg.add(holder);
+}
+
+function fence(boundary, gates, height = 2.0) {
   const g = new THREE.Group();
-  const post = pbr('#3b3f3c', null, { roughness: 0.5, metalness: 0.5 });
-  const board = pbr('#6b4b33', 'soffit');
+  const M = {
+    metal: pbr('#33363a', null, { roughness: 0.45, metalness: 0.55 }),
+    wood: pbr('#7c5436', 'fence-wood'),
+    brick: pbr('#b06a4a', 'brick'),
+    concrete: pbr('#b3b0a9', 'plaster', { roughness: 0.9 }),
+  };
+  const P = 0.19;   // половина столба
   for (let i = 0; i < boundary.length; i++) {
     const a = boundary[i], b = boundary[(i + 1) % boundary.length];
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L < 0.5) continue;
     const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
-    const n = Math.ceil(L / 2.5);
-    for (let k = 0; k < n; k++) {
-      const t0 = (k / n) * L, t1 = ((k + 1) / n) * L, tm = (t0 + t1) / 2;
-      const mx = a[0] + ux * tm, my = a[1] + uy * tm;
-      if (gaps.some(([gx, gy, r]) => Math.hypot(mx - gx, my - gy) < r)) continue;
-      const seg = box(t1 - t0, height - 0.15, 0.03, board);
-      seg.position.set(mx, 0.1 + (height - 0.15) / 2, my);
-      seg.rotation.y = -Math.atan2(uy, ux);
-      seg.userData.collide = true;
-      g.add(seg);
-      const p = box(0.08, height + 0.1, 0.08, post);
-      p.position.set(a[0] + ux * t0, (height + 0.1) / 2, a[1] + uy * t0);
-      g.add(p);
+    const eg = new THREE.Group();
+    eg.position.set(a[0], 0, a[1]);
+    eg.rotation.y = -Math.atan2(uy, ux);
+    g.add(eg);
+    // локальная ось z = (-uy, ux) на плане: с какой стороны участок
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const inside = insidePoly([mid[0] - uy * 0.5, mid[1] + ux * 0.5], boundary) ? 1 : -1;
+    // ворота на этом ребре
+    const ops = [];
+    for (const gt of gates) {
+      const t = (gt.at[0] - a[0]) * ux + (gt.at[1] - a[1]) * uy;
+      const d = Math.abs((gt.at[0] - a[0]) * -uy + (gt.at[1] - a[1]) * ux);
+      if (d > 0.4 || t < P || t > L - P) continue;
+      const w = Math.min(gt.width, L - 4 * P);
+      ops.push({ gt, t0: Math.max(2 * P, t - w / 2), t1: Math.min(L - 2 * P, t + w / 2) });
     }
+    ops.sort((p, q) => p.t0 - q.t0);
+    // пролёты забора между столбами
+    const runs = [];
+    let s = 0;
+    for (const o of ops) { runs.push([s, o.t0 - P]); s = o.t1 + P; }
+    runs.push([s, L]);
+    for (const [r0, r1] of runs) {
+      pillar(eg, M, r0, height);
+      if (r1 - r0 < 0.5) { if (r1 < L) pillar(eg, M, r1, height); continue; }
+      const n = Math.ceil((r1 - r0) / 3);
+      for (let k = 0; k < n; k++) {
+        const x0 = r0 + (k / n) * (r1 - r0), x1 = r0 + ((k + 1) / n) * (r1 - r0);
+        if (k > 0) pillar(eg, M, x0, height);
+        part(eg, x1 - x0 - 2 * P, 0.3, 0.2, M.concrete, (x0 + x1) / 2, 0.1, 0);
+        fencePanel(eg, M, x0 + P, x1 - x0 - 2 * P, 0.25, height - 0.3);
+      }
+      if (r1 < L) pillar(eg, M, r1, height);
+    }
+    ops.forEach((o, k) => {
+      if (o.gt.type === 'gap') return;
+      const next = ops[k + 1]?.t0 ?? L, prev = ops[k - 1]?.t1 ?? 0;
+      gateLeaf(eg, M, o.gt, o.t0, o.t1, height, inside, next - o.t1, o.t0 - prev);
+    });
   }
   return g;
+}
+
+// Положение дома на участке: точка at (участок) ← начало координат дома, поворот rot (°).
+function housePlace(site) {
+  return { at: site?.house?.at ?? [0, 0], rot: site?.house?.rot ?? 0 };
 }
 
 function buildSite(site) {
   siteGroup.traverse(o => o.geometry?.dispose());
   siteGroup.clear();
   if (!site) return;
+  // Мир = система координат дома; участок разворачиваем обратно к нему.
+  const place = housePlace(site);
+  const frame = new THREE.Group();
+  frame.rotation.y = THREE.MathUtils.degToRad(place.rot);
+  const inner = new THREE.Group();
+  inner.position.set(-place.at[0], 0, -place.at[1]);
+  frame.add(inner);
+  siteGroup.add(frame);
   const pav = pbr('#b9b2a6', 'paving');
   for (const p of site.paths ?? []) {
     const m = flatQuad(p.poly, 0.012, p.texture === 'gravel' ? pbr('#a39c90', 'stone') : pav);
     m.userData.walkable = true;
-    siteGroup.add(m);
+    inner.add(m);
   }
-  for (const b of site.buildings ?? []) siteGroup.add(outbuilding(b));
-  if (site.boundary) siteGroup.add(fence(site.boundary, site.gates ?? [], site.fenceHeight));
+  for (const b of site.buildings ?? []) {
+    const [x0, y0, x1, y1] = b.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const wrap = new THREE.Group();
+    wrap.position.set(cx, 0, cy);
+    wrap.rotation.y = -THREE.MathUtils.degToRad(b.rot ?? 0);
+    const og = outbuilding(b);
+    og.position.set(-cx, 0, -cy);
+    wrap.add(og);
+    inner.add(wrap);
+  }
+  if (site.boundary) inner.add(fence(site.boundary, (site.gates ?? []).map(normGate), site.fenceHeight));
   bakeGroup(siteGroup);
 }
 
@@ -983,7 +1131,7 @@ function buildSite(site) {
 let doors = [];
 function collectDoors() {
   doors = [];
-  for (const g of floorGroups) g.traverse(o => { if (o.userData.door) doors.push(o); });
+  for (const g of [...floorGroups, siteGroup]) g.traverse(o => { if (o.userData.door) doors.push(o); });
 }
 function animateDoors(dt) {
   for (const h of doors) {
@@ -1008,7 +1156,7 @@ function toggleNearestDoor() {
     h.getWorldPosition(p);
     p.y = cam.y;
     const d = p.distanceTo(cam);
-    if (d > 2.2) continue;
+    if (d > (h.userData.door.reach ?? 2.2)) continue;
     const dot = p.clone().sub(cam).setY(0).normalize().dot(fwd);
     if (dot < 0.4 && d > 0.8) continue;
     const score = dot - d * 0.25;
@@ -1052,6 +1200,11 @@ const editor = createEditor(document.getElementById('editor'), {
     ui.roof.checked = false;
     applyVisibility();
   },
+  onSite() {
+    ui.floors.value = house.floors.length - 1;
+    ui.roof.checked = true;
+    applyVisibility();
+  },
 });
 
 function setStatus(text) { editor.setStatus(text); }
@@ -1077,7 +1230,7 @@ function setEditing(on) {
   ui.edit.setAttribute('aria-pressed', on);
   if (on) {
     if (!editorOpened) { editorOpened = true; editor.setFloor(house.floors.length - 1); }
-    else editor.setFloor(editor.floor);
+    else if (editor.site) editor.setSite(); else editor.setFloor(editor.floor);
   }
   requestAnimationFrame(() => { resize(); editor.fit(); });
 }

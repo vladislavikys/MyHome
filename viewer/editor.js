@@ -17,12 +17,33 @@ const TOOLS = [
   ['room', 'Подпись', 'Нажмите внутри помещения, чтобы подписать его. Площадь посчитается по стенам.'],
 ];
 
+const SITE_TOOLS = [
+  ['select', 'Выбор', 'Тяните дом, постройки, дорожки, ворота или углы участка. Нажмите на дом или постройку, чтобы повернуть.'],
+  ['gate', 'Ворота', 'Нажмите на забор там, где нужны ворота или калитка.'],
+  ['building', 'Постройка', 'Нажмите на участке там, где поставить новую постройку.'],
+];
+
 const TYPE_NAMES = { window: 'Окно', door: 'Дверь', glassdoor: 'Витражная дверь' };
 
 const snap = v => Math.round(v / SNAP) * SNAP;
 const r2 = v => Math.round(v * 100) / 100;
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const uid = p => p + Math.random().toString(36).slice(2, 7);
+
+// Поворот точки на deg° вокруг c (на плане: ось y вниз).
+function rotP(p, deg, c = [0, 0]) {
+  const a = (deg * Math.PI) / 180, co = Math.cos(a), si = Math.sin(a), x = p[0] - c[0], y = p[1] - c[1];
+  return [c[0] + x * co - y * si, c[1] + x * si + y * co];
+}
+
+function insidePoly(p, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
 
 function wallGeom(w) {
   const [ax, ay] = w.from, [bx, by] = w.to;
@@ -39,9 +60,10 @@ function projectOnWall(w, p) {
   return { t, tc, q, d: dist(p, q), g };
 }
 
-export function createEditor(root, { onChange, onFloor }) {
+export function createEditor(root, { onChange, onFloor, onSite }) {
   let house = null;
   let floorIdx = 0;
+  let siteMode = false;   // вкладка «Участок»
   let tool = 'select';
   let sel = null;        // {kind:'wall'|'opening'|'skylight'|'room', ...}
   let draft = null;      // новая стена в процессе
@@ -76,14 +98,19 @@ export function createEditor(root, { onChange, onFloor }) {
   const svg = $('ed-svg');
   const props = $('ed-props');
 
-  for (const [key, label] of TOOLS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.dataset.tool = key;
-    b.textContent = label;
-    b.onclick = () => setTool(key);
-    $('ed-tools').append(b);
+  function renderTools() {
+    $('ed-tools').innerHTML = '';
+    for (const [key, label] of siteMode ? SITE_TOOLS : TOOLS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.tool = key;
+      b.textContent = label;
+      b.onclick = () => setTool(key);
+      b.setAttribute('aria-pressed', key === tool);
+      $('ed-tools').append(b);
+    }
   }
+  renderTools();
 
   const floor = () => house.floors[floorIdx];
   const isTop = () => floorIdx === house.floors.length - 1;
@@ -121,9 +148,9 @@ export function createEditor(root, { onChange, onFloor }) {
   // ---------- вид ----------
   function fit() {
     if (!svg.getBoundingClientRect().width) return;
-    const pts = [...(floor().outline ?? []), ...walls().flatMap(w => [w.from, w.to])];
+    const pts = siteMode ? fitSite() : [...(floor().outline ?? []), ...walls().flatMap(w => [w.from, w.to])];
     const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-    const pad = 1.0;
+    const pad = siteMode ? 2.0 : 1.0;
     const bx = Math.min(...xs) - pad, by = Math.min(...ys) - pad;
     const bw = Math.max(...xs) - Math.min(...xs) + 2 * pad;
     const bh = Math.max(...ys) - Math.min(...ys) + 2 * pad;
@@ -250,6 +277,276 @@ export function createEditor(root, { onChange, onFloor }) {
     return null;
   }
 
+  // ---------- участок ----------
+  // Дом ставится на участок точкой at и поворотом rot (°); постройки поворачиваются вокруг своего центра.
+  const site = () => (house.site ??= { boundary: [], gates: [], buildings: [], paths: [] });
+  const place = () => (site().house ??= { at: [0, 0], rot: 0 });
+  const placeRO = () => ({ at: house.site?.house?.at ?? [0, 0], rot: house.site?.house?.rot ?? 0 });
+  const toSite = p => { const pl = placeRO(); const q = rotP(p, pl.rot); return [q[0] + pl.at[0], q[1] + pl.at[1]]; };
+  const houseOutline = () => house.floors[0].outline ?? [];
+  const houseCenter = () => {
+    const o = houseOutline(), xs = o.map(p => p[0]), ys = o.map(p => p[1]);
+    return xs.length ? [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2] : [0, 0];
+  };
+  const bldCenter = b => [(b.rect[0] + b.rect[2]) / 2, (b.rect[1] + b.rect[3]) / 2];
+  const bldPoly = b => {
+    const [x0, y0, x1, y1] = b.rect, c = bldCenter(b);
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => rotP(p, b.rot ?? 0, c));
+  };
+  const gateObj = g => Array.isArray(g) ? { at: [g[0], g[1]], width: g[2] * 2, type: 'gap' } : g;
+  // ребро забора, ближайшее к точке
+  function nearestEdge(p) {
+    const B = house.site?.boundary ?? [];
+    let best = null;
+    for (let i = 0; i < B.length; i++) {
+      const w = { from: B[i], to: B[(i + 1) % B.length] };
+      const pr = projectOnWall(w, p);
+      if (!best || pr.d < best.pr.d) best = { i, pr };
+    }
+    return best;
+  }
+
+  function setHouseRot(deg) {
+    const pl = place(), c = houseCenter();
+    const S = toSite(c);
+    pl.rot = ((Math.round(deg) % 360) + 360) % 360;
+    const q = rotP(c, pl.rot);
+    pl.at = [r2(S[0] - q[0]), r2(S[1] - q[1])];
+  }
+
+  function siteHit(p) {
+    const tol = HIT_PX / pxPerM();
+    const s = house.site ?? {};
+    const B = s.boundary ?? [];
+    for (let i = 0; i < B.length; i++) if (dist(p, B[i]) < tol * 1.3) return { kind: 'corner', i };
+    for (const [i, g0] of (s.gates ?? []).entries()) {
+      const g = gateObj(g0);
+      if (dist(p, g.at) < Math.max(g.width / 2, tol * 1.5)) {
+        const e = nearestEdge(g.at);
+        if (!e || projectOnWall({ from: g.at, to: [g.at[0] + e.pr.g.u[0], g.at[1] + e.pr.g.u[1]] }, p).d < 0.8) return { kind: 'gate', i };
+      }
+    }
+    for (const b of [...(s.buildings ?? [])].reverse()) if (insidePoly(p, bldPoly(b))) return { kind: 'bld', b };
+    if (insidePoly(p, houseOutline().map(toSite))) return { kind: 'house' };
+    for (const path of [...(s.paths ?? [])].reverse()) if (insidePoly(p, path.poly)) return { kind: 'path', path };
+    return null;
+  }
+
+  function siteDown(p, ev) {
+    if (tool === 'gate') {
+      const e = nearestEdge(p);
+      if (!e || e.pr.d > 1.5) return;
+      begin();
+      const s = site();
+      s.gates = (s.gates ?? []).map(gateObj);
+      const g = { name: 'Ворота', at: [r2(snap(e.pr.q[0])), r2(snap(e.pr.q[1]))], width: 4.0, type: 'slide' };
+      s.gates.push(g);
+      sel = { kind: 'gate', i: s.gates.length - 1 };
+      tool = 'select';
+      commit();
+      renderTools();
+      return;
+    }
+    if (tool === 'building') {
+      begin();
+      const [x, y] = [snap(p[0]), snap(p[1])];
+      const b = { name: 'Постройка', rect: [r2(x - 2), r2(y - 1.5), r2(x + 2), r2(y + 1.5)], height: 2.6, roof: 'shed', drop: 0.4,
+        wallColor: '#c9a27a', wallTexture: 'soffit', roofColor: '#8d8f8c',
+        doors: [{ at: [r2(x), r2(y + 1.53)], width: 0.9, height: 1.9, color: '#6e4a2f' }] };
+      (site().buildings ??= []).push(b);
+      sel = { kind: 'bld', b };
+      tool = 'select';
+      commit();
+      renderTools();
+      return;
+    }
+    const h = siteHit(p);
+    if (!h) {
+      sel = null;
+      drag = { kind: 'pan', start: [ev.clientX, ev.clientY], view0: { ...view } };
+      render();
+      return;
+    }
+    begin();
+    if (h.kind === 'gate') {
+      const s = site();
+      s.gates = s.gates.map(gateObj);
+      sel = h;
+      drag = { kind: 's-gate', g: s.gates[h.i] };
+    } else if (h.kind === 'corner') {
+      sel = h;
+      drag = { kind: 's-corner', i: h.i };
+    } else if (h.kind === 'bld') {
+      sel = h;
+      drag = { kind: 's-bld', b: h.b, p0: p, rect0: [...h.b.rect], doors0: (h.b.doors ?? []).map(d => [...d.at]) };
+    } else if (h.kind === 'house') {
+      sel = h;
+      drag = { kind: 's-house', p0: p, at0: [...place().at] };
+    } else if (h.kind === 'path') {
+      sel = h;
+      drag = { kind: 's-path', path: h.path, p0: p, poly0: h.path.poly.map(q => [...q]) };
+    }
+    render();
+  }
+
+  function siteMove(p) {
+    const d = drag.p0 ? [snap(p[0] - drag.p0[0]), snap(p[1] - drag.p0[1])] : null;
+    const add = (q, v) => [r2(q[0] + v[0]), r2(q[1] + v[1])];
+    if (drag.kind === 's-bld') {
+      drag.b.rect = [drag.rect0[0] + d[0], drag.rect0[1] + d[1], drag.rect0[2] + d[0], drag.rect0[3] + d[1]].map(r2);
+      (drag.b.doors ?? []).forEach((door, k) => { door.at = add(drag.doors0[k], d); });
+    } else if (drag.kind === 's-house') {
+      place().at = add(drag.at0, d);
+    } else if (drag.kind === 's-path') {
+      drag.path.poly = drag.poly0.map(q => add(q, d));
+    } else if (drag.kind === 's-corner') {
+      site().boundary[drag.i] = [r2(snap(p[0])), r2(snap(p[1]))];
+    } else if (drag.kind === 's-gate') {
+      const e = nearestEdge(p);
+      if (e) drag.g.at = [r2(snap(e.pr.q[0])), r2(snap(e.pr.q[1]))];
+    } else return false;
+    live();
+    return true;
+  }
+
+  function siteDelete() {
+    const s = site();
+    if (sel.kind === 'bld') s.buildings = s.buildings.filter(b => b !== sel.b);
+    else if (sel.kind === 'gate') s.gates = s.gates.filter((g, i) => i !== sel.i);
+    else if (sel.kind === 'path') s.paths = s.paths.filter(p => p !== sel.path);
+    else if (sel.kind === 'corner' && s.boundary.length > 3) s.boundary.splice(sel.i, 1);
+    else return false;
+    return true;
+  }
+
+  function fitSite() {
+    const s = house.site ?? {};
+    const pts = [...(s.boundary ?? []), ...(s.buildings ?? []).flatMap(bldPoly), ...houseOutline().map(toSite)];
+    return pts.length ? pts : [[0, 0], [10, 10]];
+  }
+
+  function renderSite(out, k) {
+    const s = house.site ?? {};
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const pts = a => a.map(p => p.join(',')).join(' ');
+    const label = (p, t, cls = 'g-room-name') => out.push(`<text class="${cls}" x="${p[0]}" y="${p[1]}" font-size="${13 * k}">${esc(t)}</text>`);
+    if (s.boundary?.length) out.push(`<polygon class="g-bound" points="${pts(s.boundary)}" stroke-width="${3 * k}"/>`);
+    for (const path of s.paths ?? []) out.push(`<polygon class="g-path" points="${pts(path.poly)}"/>`);
+    // дом: контур и стены 1-го этажа
+    const hp = houseOutline().map(toSite);
+    if (hp.length) out.push(`<polygon class="g-slab g-house" points="${pts(hp)}"/>`);
+    for (const w of house.floors[0].walls) {
+      if (w.virtual) continue;
+      const a = toSite(w.from), b = toSite(w.to), t = w.thickness ?? 0.3;
+      const cls = w.material === 'glass' ? 'g-glass' : t >= 0.25 ? 'g-wall g-ext' : 'g-wall';
+      out.push(`<line class="${cls}" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="${Math.max(t, 2 * k)}"/>`);
+    }
+    if (hp.length) label(toSite(houseCenter()), 'Дом');
+    for (const b of s.buildings ?? []) {
+      out.push(`<polygon class="g-bld" points="${pts(bldPoly(b))}" stroke-width="${2 * k}"/>`);
+      const c = bldCenter(b);
+      for (const d of b.doors ?? []) {
+        const hw = d.width / 2, [x, y] = d.at;
+        const [p0, p1] = (d.axis === 'y' ? [[x, y - hw], [x, y + hw]] : [[x - hw, y], [x + hw, y]]).map(q => rotP(q, b.rot ?? 0, c));
+        out.push(`<line class="g-op g-door" x1="${p0[0]}" y1="${p0[1]}" x2="${p1[0]}" y2="${p1[1]}" stroke-width="${5 * k}"/>`);
+      }
+      label(c, b.name ?? 'Постройка');
+    }
+    for (const g0 of s.gates ?? []) {
+      const g = gateObj(g0), e = nearestEdge(g.at);
+      if (!e) continue;
+      const u = e.pr.g.u, hw = g.width / 2;
+      out.push(`<line class="g-gate${g.type === 'gap' ? ' g-gate-gap' : ''}" x1="${g.at[0] - u[0] * hw}" y1="${g.at[1] - u[1] * hw}" x2="${g.at[0] + u[0] * hw}" y2="${g.at[1] + u[1] * hw}" stroke-width="${7 * k}"/>`);
+    }
+    for (const c of s.boundary ?? []) out.push(`<circle class="g-handle" cx="${c[0]}" cy="${c[1]}" r="${5 * k}" stroke-width="${1.5 * k}"/>`);
+    // выделение
+    const selPoly = sel?.kind === 'bld' ? bldPoly(sel.b) : sel?.kind === 'house' ? hp : sel?.kind === 'path' ? sel.path.poly : null;
+    if (selPoly) out.push(`<polygon class="g-sel-rect" points="${pts(selPoly)}" stroke-width="${3 * k}"/>`);
+    if (sel?.kind === 'gate' && s.gates?.[sel.i]) {
+      const g = gateObj(s.gates[sel.i]), e = nearestEdge(g.at);
+      if (e) {
+        const u = e.pr.g.u, hw = g.width / 2;
+        out.push(`<line class="g-sel" x1="${g.at[0] - u[0] * hw}" y1="${g.at[1] - u[1] * hw}" x2="${g.at[0] + u[0] * hw}" y2="${g.at[1] + u[1] * hw}" stroke-width="${16 * k}"/>`);
+      }
+    }
+    if (sel?.kind === 'corner' && s.boundary?.[sel.i]) {
+      const c = s.boundary[sel.i];
+      out.push(`<circle class="g-handle" cx="${c[0]}" cy="${c[1]}" r="${9 * k}" stroke-width="${3 * k}"/>`);
+    }
+  }
+
+  function siteProps(field, num, slider) {
+    const rotBtns = `<div class="ed-btnrow"><button type="button" id="ed-rl">↺ 90°</button><button type="button" id="ed-rr">↻ 90°</button></div>`;
+    if (!sel) return `<p class="ed-hint">${SITE_TOOLS.find(t => t[0] === tool)[2]}</p>`;
+    if (sel.kind === 'house') {
+      return `<div class="ed-props-head"><strong>Дом</strong></div>
+        <div class="ed-grid">${slider('ed-rot', 'Поворот, °', placeRO().rot, 0, 359, 1)}${rotBtns}
+        <p class="ed-hint">Тяните дом мышью или пальцем, чтобы передвинуть.</p></div>`;
+    }
+    if (sel.kind === 'bld') {
+      const b = sel.b;
+      return `<div class="ed-props-head"><strong>${b.name ?? 'Постройка'}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <div class="ed-grid">
+          ${field('ed-bname', 'Название', String(b.name ?? '').replace(/"/g, '&quot;'), 'type="text" autocomplete="off"')}
+          ${num('ed-bw', 'Ширина, м', b.rect[2] - b.rect[0], 0.1)}
+          ${num('ed-bd', 'Глубина, м', b.rect[3] - b.rect[1], 0.1)}
+          ${num('ed-bh', 'Высота стен, м', b.height ?? 2.8, 0.1)}
+          ${slider('ed-rot', 'Поворот, °', b.rot ?? 0, 0, 359, 1)}${rotBtns}
+        </div>`;
+    }
+    if (sel.kind === 'gate') {
+      const g = gateObj(site().gates[sel.i]);
+      const types = { slide: 'Откатные ворота', swing: 'Калитка (распашная)', gap: 'Проём без створки' };
+      return `<div class="ed-props-head"><strong>${g.name ?? types[g.type]}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <div class="ed-grid">
+          <label class="ed-field" for="ed-gtype"><span>Тип</span><select id="ed-gtype">
+            ${Object.entries(types).map(([v, n]) => `<option value="${v}" ${g.type === v ? 'selected' : ''}>${n}</option>`).join('')}
+          </select></label>
+          ${slider('ed-gw', 'Ширина, м', g.width, 0.8, 6, 0.1)}
+          ${g.type !== 'gap' ? `<button type="button" id="ed-gflip">${g.type === 'slide' ? 'Откатывать в другую сторону' : 'Петли с другой стороны'}</button>` : ''}
+          <p class="ed-hint">Тяните ворота вдоль забора. В прогулке открываются клавишей E или кнопкой «Дверь».</p>
+        </div>`;
+    }
+    if (sel.kind === 'path') {
+      return `<div class="ed-props-head"><strong>${sel.path.name ?? 'Дорожка'}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <p class="ed-hint">Тяните дорожку, чтобы передвинуть.</p>`;
+    }
+    if (sel.kind === 'corner') {
+      return `<div class="ed-props-head"><strong>Угол участка</strong><button type="button" class="ed-danger" id="ed-del">Убрать угол</button></div>
+        <p class="ed-hint">Тяните угол, чтобы изменить границу участка.</p>`;
+    }
+    return '';
+  }
+
+  function sitePropsBind(on) {
+    const btn = (id, fn) => props.querySelector('#' + id)?.addEventListener('click', () => { begin(); fn(); commit(); });
+    if (sel?.kind === 'house') {
+      on('ed-rot', el => setHouseRot(parseFloat(el.value) || 0));
+      btn('ed-rl', () => setHouseRot(placeRO().rot - 90));
+      btn('ed-rr', () => setHouseRot(placeRO().rot + 90));
+    } else if (sel?.kind === 'bld') {
+      const b = sel.b;
+      const setRot = v => { b.rot = ((Math.round(v) % 360) + 360) % 360; };
+      on('ed-rot', el => setRot(parseFloat(el.value) || 0));
+      btn('ed-rl', () => setRot((b.rot ?? 0) - 90));
+      btn('ed-rr', () => setRot((b.rot ?? 0) + 90));
+      on('ed-bname', el => { b.name = el.value; });
+      on('ed-bh', el => { const v = parseFloat(el.value); if (v > 1) b.height = v; });
+      const resize = (w, d) => {
+        const [cx, cy] = bldCenter(b), w0 = b.rect[2] - b.rect[0], d0 = b.rect[3] - b.rect[1];
+        b.rect = [cx - w / 2, cy - d / 2, cx + w / 2, cy + d / 2].map(r2);
+        for (const door of b.doors ?? []) door.at = [r2(cx + (door.at[0] - cx) * w / w0), r2(cy + (door.at[1] - cy) * d / d0)];
+      };
+      on('ed-bw', el => { const v = parseFloat(el.value); if (v > 1) resize(v, b.rect[3] - b.rect[1]); });
+      on('ed-bd', el => { const v = parseFloat(el.value); if (v > 1) resize(b.rect[2] - b.rect[0], v); });
+    } else if (sel?.kind === 'gate') {
+      const g = () => site().gates[sel.i];
+      on('ed-gtype', el => { g().type = el.value; propsKey = null; });
+      on('ed-gw', el => { const v = parseFloat(el.value); if (v > 0.5) g().width = v; });
+      btn('ed-gflip', () => { if (g().flip) delete g().flip; else g().flip = true; });
+    }
+  }
+
   // ---------- действия ----------
   function setTool(t) {
     tool = t;
@@ -261,6 +558,10 @@ export function createEditor(root, { onChange, onFloor }) {
   function deleteSelected() {
     if (!sel) return;
     begin();
+    if (siteMode) {
+      if (siteDelete()) { sel = null; commit(); } else pending = null;
+      return;
+    }
     const f = floor();
     if (sel.kind === 'wall') {
       f.walls = f.walls.filter(w => w !== sel.wall);
@@ -345,6 +646,7 @@ export function createEditor(root, { onChange, onFloor }) {
       return;
     }
     const p = toWorld(ev);
+    if (siteMode) { siteDown(p, ev); return; }
 
     if (tool === 'wall') {
       if (!draft) draft = { from: snapPoint(p), to: snapPoint(p), pointer: ev.pointerId, t0: performance.now() };
@@ -414,6 +716,8 @@ export function createEditor(root, { onChange, onFloor }) {
     } else if (drag.kind === 'pan') {
       const k = drag.view0.w / svg.getBoundingClientRect().width;
       view = { ...drag.view0, x: drag.view0.x - (ev.clientX - drag.start[0]) * k, y: drag.view0.y - (ev.clientY - drag.start[1]) * k };
+    } else if (drag.kind.startsWith('s-')) {
+      siteMove(p);
     } else if (drag.kind === 'wall') {
       const { n } = drag;
       let d = (p[0] - drag.p0[0]) * n[0] + (p[1] - drag.p0[1]) * n[1];
@@ -506,6 +810,14 @@ export function createEditor(root, { onChange, onFloor }) {
     for (let x = gx0; x <= gx1; x++) grid += `M${x} ${gy0}V${gy1}`;
     for (let y = gy0; y <= gy1; y++) grid += `M${gx0} ${y}H${gx1}`;
     out.push(`<path class="g-grid" d="${grid}"/>`);
+    if (siteMode) {
+      renderSite(out, k);
+      svg.innerHTML = out.join('');
+      renderProps();
+      markTabs();
+      $('ed-undo').disabled = undoStack.length === 0;
+      return;
+    }
 
     // оси
     for (const [name, x] of house.axes?.x ?? []) {
@@ -636,15 +948,20 @@ export function createEditor(root, { onChange, onFloor }) {
 
     svg.innerHTML = out.join('');
     renderProps();
-    root.querySelectorAll('#ed-floors button').forEach((b, i) => b.setAttribute('aria-pressed', i === floorIdx));
+    markTabs();
     $('ed-undo').disabled = undoStack.length === 0;
-    root.querySelector('[data-tool="skylight"]').disabled = !isTop();
+    const sk = root.querySelector('[data-tool="skylight"]');
+    if (sk) sk.disabled = !isTop();
+  }
+  function markTabs() {
+    root.querySelectorAll('#ed-floors button').forEach(b =>
+      b.setAttribute('aria-pressed', b.dataset.site ? siteMode : !siteMode && Number(b.dataset.floor) === floorIdx));
   }
 
   // ---------- свойства ----------
   let propsKey = null;
   function renderProps() {
-    const key = sel ? sel.kind + ':' + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
+    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) : '') : tool) : sel ? sel.kind + ':' + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
     // не перерисовываем поля, пока пользователь в них печатает
     if (key === propsKey && props.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') {
       refreshReadouts();
@@ -663,7 +980,9 @@ export function createEditor(root, { onChange, onFloor }) {
           <input id="${id}" type="number" inputmode="decimal" step="${step}" min="${min}" max="${max}" value="${r2(value)}">
         </span></label>`;
     let html = '';
-    if (!sel) {
+    if (siteMode) {
+      html = siteProps(field, num, slider);
+    } else if (!sel) {
       html = `<p class="ed-hint">${TOOLS.find(t => t[0] === tool)[2]}</p>`;
       const sk = skylights();
       if (tool === 'select' && sk.length) {
@@ -733,6 +1052,7 @@ export function createEditor(root, { onChange, onFloor }) {
       }
     };
     props.querySelector('#ed-del')?.addEventListener('click', deleteSelected);
+    if (siteMode) { sitePropsBind(on); return; }
     props.querySelectorAll('[data-sky]').forEach(b => b.addEventListener('click', () => {
       const s = skylights()[Number(b.dataset.sky)];
       sel = { kind: 'skylight', roof: s.roof, win: s.win };
@@ -831,11 +1151,22 @@ export function createEditor(root, { onChange, onFloor }) {
   // ---------- внешнее API ----------
   function setFloor(i) {
     floorIdx = i;
+    if (siteMode) { siteMode = false; tool = 'select'; renderTools(); }
     sel = null;
     draft = null;
     rooms = computeRooms(floor());
     fit();
     onFloor?.(i);
+  }
+
+  function setSite() {
+    siteMode = true;
+    tool = 'select';
+    sel = null;
+    draft = null;
+    renderTools();
+    fit();
+    onSite?.();
   }
 
   return {
@@ -846,16 +1177,25 @@ export function createEditor(root, { onChange, onFloor }) {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = f.short ?? `${i + 1} этаж`;
+        b.dataset.floor = i;
         b.onclick = () => setFloor(i);
         $('ed-floors').append(b);
       });
+      const sb = document.createElement('button');
+      sb.type = 'button';
+      sb.textContent = 'Участок';
+      sb.dataset.site = '1';
+      sb.onclick = setSite;
+      $('ed-floors').append(sb);
       floorIdx = Math.min(floorIdx, house.floors.length - 1);
       sel = null;
       rooms = computeRooms(floor());
       if (!keepView || !view) requestAnimationFrame(fit); else render();
     },
     get floor() { return floorIdx; },
+    get site() { return siteMode; },
     setFloor,
+    setSite,
     setStatus(text) { $('ed-status').textContent = text; },
     onReset(fn) { $('ed-reset').onclick = fn; },
     onDownload(fn) { $('ed-download').onclick = fn; },
