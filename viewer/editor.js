@@ -3,6 +3,8 @@
 
 import { computeRooms } from './rooms.js';
 import { stairSteps } from './stairs.js';
+import { AREA_KINDS, ITEM_TYPES } from './landscape.js';
+import { FURNITURE, FLOOR_FINISHES, WALL_FINISHES, furnSize } from './interior.js';
 
 const SNAP = 0.05;
 const HIT_PX = 12;
@@ -15,10 +17,14 @@ const TOOLS = [
   ['door', 'Дверь', 'Нажмите на стену там, где нужна дверь.'],
   ['skylight', 'Мансардное', 'Нажмите на скат крыши (только верхний этаж), чтобы добавить мансардное окно.'],
   ['room', 'Подпись', 'Нажмите внутри помещения, чтобы подписать его. Площадь посчитается по стенам.'],
+  ['furniture', 'Мебель', 'Выберите предмет и нажмите в комнате. Отделка пола и стен — нажмите на подпись комнаты.'],
 ];
 
 const SITE_TOOLS = [
   ['select', 'Выбор', 'Тяните дом, постройки, дорожки, ворота или углы участка. Нажмите на дом или постройку, чтобы повернуть.'],
+  ['area', 'Покрытие', 'Выберите покрытие и нажмите на участке. Форму меняйте, таща кружки на углах.'],
+  ['plant', 'Растения', 'Выберите растение и нажимайте на участке — можно посадить сразу несколько.'],
+  ['decor', 'Декор', 'Выберите объект и нажмите на участке.'],
   ['gate', 'Ворота', 'Нажмите на забор там, где нужны ворота или калитка.'],
   ['building', 'Постройка', 'Нажмите на участке там, где поставить новую постройку.'],
 ];
@@ -64,6 +70,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   let house = null;
   let floorIdx = 0;
   let siteMode = false;   // вкладка «Участок»
+  const palette = { area: 'paving', plant: 'tree', decor: 'lamp', furniture: 'bed2' };
   let tool = 'select';
   let sel = null;        // {kind:'wall'|'opening'|'skylight'|'room', ...}
   let draft = null;      // новая стена в процессе
@@ -113,6 +120,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   renderTools();
 
   const floor = () => house.floors[floorIdx];
+  const furnPoly = it => {
+    const [w, d] = furnSize(it), [x, y] = it.at;
+    return [[x - w / 2, y - d / 2], [x + w / 2, y - d / 2], [x + w / 2, y + d / 2], [x - w / 2, y + d / 2]].map(q => rotP(q, it.rot ?? 0, it.at));
+  };
   const isTop = () => floorIdx === house.floors.length - 1;
   const walls = () => floor().walls;
   const openings = () => (floor().openings ??= []);
@@ -267,6 +278,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     for (const [k, room] of (floor().rooms ?? []).entries()) {
       if (room.at && Math.abs(p[0] - room.at[0]) < 0.9 && Math.abs(p[1] - room.at[1]) < 0.35) return { kind: 'room', room, index: k };
     }
+    for (const it of [...(floor().furniture ?? [])].reverse()) if (insidePoly(p, furnPoly(it))) return { kind: 'furn', it };
     let best = null, bestD = Infinity;
     for (const w of walls()) {
       const pr = projectOnWall(w, p);
@@ -306,6 +318,27 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     return best;
   }
 
+  const itemR = it => { const T = ITEM_TYPES[it.type]; return T?.rect ? Math.max(...T.rect) / 2 * (it.size ?? 1) : (T?.r ?? 0.5) * (it.size ?? 1); };
+  const itemRect = it => {
+    const T = ITEM_TYPES[it.type], s = it.size ?? 1, [w, d] = T.rect.map(v => v * s / 2), [x, y] = it.at;
+    return [[x - w, y - d], [x + w, y - d], [x + w, y + d], [x - w, y + d]].map(q => rotP(q, it.rot ?? 0, it.at));
+  };
+  const polyCenter = poly => {
+    const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+    return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  };
+  function rotatePath(path, deg) {
+    const c = polyCenter(path.poly);
+    path.poly = path.poly.map(q => rotP(q, deg, c)).map(q => [r2(q[0]), r2(q[1])]);
+  }
+  function newArea(kind, p) {
+    const K = AREA_KINDS[kind], [w, d] = K.size, [x, y] = [snap(p[0]), snap(p[1])];
+    const poly = K.round
+      ? Array.from({ length: 14 }, (_, i) => { const a = (i / 14) * Math.PI * 2; return [r2(x + Math.cos(a) * w / 2), r2(y + Math.sin(a) * d / 2)]; })
+      : [[x - w / 2, y - d / 2], [x + w / 2, y - d / 2], [x + w / 2, y + d / 2], [x - w / 2, y + d / 2]].map(q => q.map(r2));
+    return { name: K.name, kind, poly };
+  }
+
   function setHouseRot(deg) {
     const pl = place(), c = houseCenter();
     const S = toSite(c);
@@ -318,7 +351,14 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     const tol = HIT_PX / pxPerM();
     const s = house.site ?? {};
     const B = s.boundary ?? [];
+    if (sel?.kind === 'path') {
+      for (let i = 0; i < sel.path.poly.length; i++) if (dist(p, sel.path.poly[i]) < tol * 1.3) return { kind: 'pvert', path: sel.path, i };
+    }
     for (let i = 0; i < B.length; i++) if (dist(p, B[i]) < tol * 1.3) return { kind: 'corner', i };
+    for (const it of [...(s.items ?? [])].reverse()) {
+      const T = ITEM_TYPES[it.type];
+      if (T?.rect ? insidePoly(p, itemRect(it)) : dist(p, it.at) < Math.max(tol, itemR(it) * (T?.group === 'plant' ? 0.6 : 1))) return { kind: 'item', it };
+    }
     for (const [i, g0] of (s.gates ?? []).entries()) {
       const g = gateObj(g0);
       if (dist(p, g.at) < Math.max(g.width / 2, tol * 1.5)) {
@@ -345,6 +385,24 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       tool = 'select';
       commit();
       renderTools();
+      return;
+    }
+    if (tool === 'area') {
+      begin();
+      const a = newArea(palette.area, p);
+      (site().paths ??= []).push(a);
+      sel = { kind: 'path', path: a };
+      tool = 'select';
+      commit();
+      renderTools();
+      return;
+    }
+    if (tool === 'plant' || tool === 'decor') {
+      begin();
+      const it = { type: palette[tool], at: [r2(snap(p[0])), r2(snap(p[1]))] };
+      (site().items ??= []).push(it);
+      if (tool === 'decor') { sel = { kind: 'item', it }; tool = 'select'; renderTools(); }
+      commit();
       return;
     }
     if (tool === 'building') {
@@ -382,6 +440,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     } else if (h.kind === 'house') {
       sel = h;
       drag = { kind: 's-house', p0: p, at0: [...place().at] };
+    } else if (h.kind === 'pvert') {
+      drag = { kind: 's-pvert', path: h.path, i: h.i };
+    } else if (h.kind === 'item') {
+      sel = h;
+      drag = { kind: 's-item', it: h.it, p0: p, at0: [...h.it.at] };
     } else if (h.kind === 'path') {
       sel = h;
       drag = { kind: 's-path', path: h.path, p0: p, poly0: h.path.poly.map(q => [...q]) };
@@ -399,6 +462,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       place().at = add(drag.at0, d);
     } else if (drag.kind === 's-path') {
       drag.path.poly = drag.poly0.map(q => add(q, d));
+    } else if (drag.kind === 's-item') {
+      drag.it.at = add(drag.at0, d);
+    } else if (drag.kind === 's-pvert') {
+      drag.path.poly[drag.i] = [r2(snap(p[0])), r2(snap(p[1]))];
     } else if (drag.kind === 's-corner') {
       site().boundary[drag.i] = [r2(snap(p[0])), r2(snap(p[1]))];
     } else if (drag.kind === 's-gate') {
@@ -414,6 +481,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (sel.kind === 'bld') s.buildings = s.buildings.filter(b => b !== sel.b);
     else if (sel.kind === 'gate') s.gates = s.gates.filter((g, i) => i !== sel.i);
     else if (sel.kind === 'path') s.paths = s.paths.filter(p => p !== sel.path);
+    else if (sel.kind === 'item') s.items = s.items.filter(it => it !== sel.it);
     else if (sel.kind === 'corner' && s.boundary.length > 3) s.boundary.splice(sel.i, 1);
     else return false;
     return true;
@@ -431,7 +499,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     const pts = a => a.map(p => p.join(',')).join(' ');
     const label = (p, t, cls = 'g-room-name') => out.push(`<text class="${cls}" x="${p[0]}" y="${p[1]}" font-size="${13 * k}">${esc(t)}</text>`);
     if (s.boundary?.length) out.push(`<polygon class="g-bound" points="${pts(s.boundary)}" stroke-width="${3 * k}"/>`);
-    for (const path of s.paths ?? []) out.push(`<polygon class="g-path" points="${pts(path.poly)}"/>`);
+    for (const path of s.paths ?? []) {
+      const K = AREA_KINDS[path.kind ?? (path.texture === 'gravel' ? 'gravel' : 'paving')];
+      out.push(`<polygon class="g-area" points="${pts(path.poly)}" fill="${K?.fill ?? '#bbb'}"/>`);
+    }
     // дом: контур и стены 1-го этажа
     const hp = houseOutline().map(toSite);
     if (hp.length) out.push(`<polygon class="g-slab g-house" points="${pts(hp)}"/>`);
@@ -452,6 +523,12 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       }
       label(c, b.name ?? 'Постройка');
     }
+    for (const it of s.items ?? []) {
+      const T = ITEM_TYPES[it.type];
+      if (!T) continue;
+      if (T.rect) out.push(`<polygon class="g-item" points="${pts(itemRect(it))}" fill="${T.fill}" stroke-width="${1 * k}"/>`);
+      else out.push(`<circle class="g-item${T.group === 'plant' ? ' g-plant' : ''}" cx="${it.at[0]}" cy="${it.at[1]}" r="${Math.max(itemR(it), 3 * k)}" fill="${T.fill}" stroke-width="${1 * k}"/>`);
+    }
     for (const g0 of s.gates ?? []) {
       const g = gateObj(g0), e = nearestEdge(g.at);
       if (!e) continue;
@@ -460,8 +537,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     }
     for (const c of s.boundary ?? []) out.push(`<circle class="g-handle" cx="${c[0]}" cy="${c[1]}" r="${5 * k}" stroke-width="${1.5 * k}"/>`);
     // выделение
-    const selPoly = sel?.kind === 'bld' ? bldPoly(sel.b) : sel?.kind === 'house' ? hp : sel?.kind === 'path' ? sel.path.poly : null;
+    const selPoly = sel?.kind === 'bld' ? bldPoly(sel.b) : sel?.kind === 'house' ? hp : sel?.kind === 'path' ? sel.path.poly
+      : sel?.kind === 'item' && ITEM_TYPES[sel.it.type]?.rect ? itemRect(sel.it) : null;
     if (selPoly) out.push(`<polygon class="g-sel-rect" points="${pts(selPoly)}" stroke-width="${3 * k}"/>`);
+    if (sel?.kind === 'item' && !ITEM_TYPES[sel.it.type]?.rect) out.push(`<circle class="g-sel-rect" cx="${sel.it.at[0]}" cy="${sel.it.at[1]}" r="${Math.max(itemR(sel.it), 5 * k)}" stroke-width="${3 * k}"/>`);
+    if (sel?.kind === 'path') for (const c of sel.path.poly) out.push(`<circle class="g-handle" cx="${c[0]}" cy="${c[1]}" r="${6 * k}" stroke-width="${2 * k}"/>`);
     if (sel?.kind === 'gate' && s.gates?.[sel.i]) {
       const g = gateObj(s.gates[sel.i]), e = nearestEdge(g.at);
       if (e) {
@@ -477,7 +557,24 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
 
   function siteProps(field, num, slider) {
     const rotBtns = `<div class="ed-btnrow"><button type="button" id="ed-rl">↺ 90°</button><button type="button" id="ed-rr">↻ 90°</button></div>`;
-    if (!sel) return `<p class="ed-hint">${SITE_TOOLS.find(t => t[0] === tool)[2]}</p>`;
+    const rot15 = `<div class="ed-btnrow"><button type="button" id="ed-rl">↺ 90°</button><button type="button" id="ed-rl15">↺ 15°</button><button type="button" id="ed-rr15">↻ 15°</button><button type="button" id="ed-rr">↻ 90°</button></div>`;
+    if (!sel) {
+      const hint = `<p class="ed-hint">${SITE_TOOLS.find(t => t[0] === tool)[2]}</p>`;
+      const list = tool === 'area' ? Object.entries(AREA_KINDS)
+        : tool === 'plant' || tool === 'decor' ? Object.entries(ITEM_TYPES).filter(([, T]) => T.group === tool) : null;
+      if (!list) return hint;
+      return hint + `<div class="ed-palette">${list.map(([key, T]) =>
+        `<button type="button" data-pal="${key}" aria-pressed="${palette[tool] === key}"><i style="background:${T.fill}"></i>${T.name}</button>`).join('')}</div>`;
+    }
+    if (sel.kind === 'item') {
+      const it = sel.it, T = ITEM_TYPES[it.type] ?? { name: 'Объект' };
+      return `<div class="ed-props-head"><strong>${T.name}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <div class="ed-grid">
+          ${slider('ed-isize', 'Размер', it.size ?? 1, 0.5, 2, 0.05)}
+          ${T.group === 'decor' ? slider('ed-rot', 'Поворот, °', it.rot ?? 0, 0, 359, 1) + rotBtns : ''}
+          <p class="ed-hint">Тяните, чтобы передвинуть.</p>
+        </div>`;
+    }
     if (sel.kind === 'house') {
       return `<div class="ed-props-head"><strong>Дом</strong></div>
         <div class="ed-grid">${slider('ed-rot', 'Поворот, °', placeRO().rot, 0, 359, 1)}${rotBtns}
@@ -491,6 +588,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           ${num('ed-bw', 'Ширина, м', b.rect[2] - b.rect[0], 0.1)}
           ${num('ed-bd', 'Глубина, м', b.rect[3] - b.rect[1], 0.1)}
           ${num('ed-bh', 'Высота стен, м', b.height ?? 2.8, 0.1)}
+          <label class="ed-field" for="ed-roof"><span>Крыша</span><select id="ed-roof">
+            ${[['flat', 'Плоская'], ['shed', 'Односкатная'], ['gable', 'Двускатная']].map(([v, n]) => `<option value="${v}" ${(b.roof ?? 'shed') === v ? 'selected' : ''}>${n}</option>`).join('')}
+          </select></label>
           ${slider('ed-rot', 'Поворот, °', b.rot ?? 0, 0, 359, 1)}${rotBtns}
         </div>`;
     }
@@ -508,8 +608,16 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
         </div>`;
     }
     if (sel.kind === 'path') {
+      const kind = sel.path.kind ?? (sel.path.texture === 'gravel' ? 'gravel' : 'paving');
       return `<div class="ed-props-head"><strong>${sel.path.name ?? 'Дорожка'}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
-        <p class="ed-hint">Тяните дорожку, чтобы передвинуть.</p>`;
+        <div class="ed-grid">
+          ${field('ed-pname', 'Название', String(sel.path.name ?? '').replace(/"/g, '&quot;'), 'type="text" autocomplete="off"')}
+          <label class="ed-field" for="ed-pkind"><span>Покрытие</span><select id="ed-pkind">
+            ${Object.entries(AREA_KINDS).map(([v, K]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${K.name}</option>`).join('')}
+          </select></label>
+          ${rot15}
+          <p class="ed-hint">Тяните, чтобы передвинуть; кружки на углах меняют форму.</p>
+        </div>`;
     }
     if (sel.kind === 'corner') {
       return `<div class="ed-props-head"><strong>Угол участка</strong><button type="button" class="ed-danger" id="ed-del">Убрать угол</button></div>
@@ -520,6 +628,27 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
 
   function sitePropsBind(on) {
     const btn = (id, fn) => props.querySelector('#' + id)?.addEventListener('click', () => { begin(); fn(); commit(); });
+    props.querySelectorAll('[data-pal]').forEach(b => b.addEventListener('click', () => {
+      palette[tool] = b.dataset.pal;
+      propsKey = null;
+      render();
+    }));
+    if (sel?.kind === 'path') {
+      const path = sel.path;
+      on('ed-pname', el => { path.name = el.value; });
+      on('ed-pkind', el => { path.kind = el.value; delete path.texture; });
+      btn('ed-rl', () => rotatePath(path, -90));
+      btn('ed-rr', () => rotatePath(path, 90));
+      btn('ed-rl15', () => rotatePath(path, -15));
+      btn('ed-rr15', () => rotatePath(path, 15));
+    } else if (sel?.kind === 'item') {
+      const it = sel.it;
+      const setRot = v => { it.rot = ((Math.round(v) % 360) + 360) % 360; };
+      on('ed-isize', el => { const v = parseFloat(el.value); if (v > 0.2) it.size = v; });
+      on('ed-rot', el => setRot(parseFloat(el.value) || 0));
+      btn('ed-rl', () => setRot((it.rot ?? 0) - 90));
+      btn('ed-rr', () => setRot((it.rot ?? 0) + 90));
+    }
     if (sel?.kind === 'house') {
       on('ed-rot', el => setHouseRot(parseFloat(el.value) || 0));
       btn('ed-rl', () => setHouseRot(placeRO().rot - 90));
@@ -532,6 +661,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       btn('ed-rr', () => setRot((b.rot ?? 0) + 90));
       on('ed-bname', el => { b.name = el.value; });
       on('ed-bh', el => { const v = parseFloat(el.value); if (v > 1) b.height = v; });
+      on('ed-roof', el => { b.roof = el.value; });
       const resize = (w, d) => {
         const [cx, cy] = bldCenter(b), w0 = b.rect[2] - b.rect[0], d0 = b.rect[3] - b.rect[1];
         b.rect = [cx - w / 2, cy - d / 2, cx + w / 2, cy + d / 2].map(r2);
@@ -551,6 +681,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   function setTool(t) {
     tool = t;
     draft = null;
+    if (t !== 'select') sel = null;
     root.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t));
     render();
   }
@@ -572,6 +703,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       sel.roof.windows = sel.roof.windows.filter(w => w !== sel.win);
     } else if (sel.kind === 'room') {
       f.rooms = f.rooms.filter(r => r !== sel.room);
+    } else if (sel.kind === 'furn') {
+      f.furniture = f.furniture.filter(it => it !== sel.it);
     }
     sel = null;
     commit();
@@ -657,6 +790,16 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     if (tool === 'window' || tool === 'door') { addOpening(p, tool); return; }
     if (tool === 'skylight') { addSkylight(p); return; }
     if (tool === 'room') { addRoom(p); return; }
+    if (tool === 'furniture') {
+      begin();
+      const it = { type: palette.furniture, at: [r2(snap(p[0])), r2(snap(p[1]))] };
+      (floor().furniture ??= []).push(it);
+      sel = { kind: 'furn', it };
+      tool = 'select';
+      root.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === tool));
+      commit();
+      return;
+    }
 
     const h = hit(p);
     if (!h) {
@@ -692,6 +835,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       drag = { kind: 'room', room: h.room, d: [p[0] - h.room.at[0], p[1] - h.room.at[1]] };
     } else if (h.kind === 'skylight') {
       drag = { kind: 'skylight', win: h.win, p0: p, x0: [...h.win.x], y0: [...h.win.y] };
+    } else if (h.kind === 'furn') {
+      drag = { kind: 'furn', it: h.it, p0: p, at0: [...h.it.at] };
     }
     render();
   });
@@ -739,6 +884,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       drag.o.offset = r2(Math.max(0, Math.min(pr.g.len - drag.o.width, snap(pr.t - drag.grab))));
     } else if (drag.kind === 'room') {
       drag.room.at = [r2(snap(p[0] - drag.d[0])), r2(snap(p[1] - drag.d[1]))];
+    } else if (drag.kind === 'furn') {
+      drag.it.at = [r2(drag.at0[0] + snap(p[0] - drag.p0[0])), r2(drag.at0[1] + snap(p[1] - drag.p0[1]))];
+      live();
     } else if (drag.kind === 'skylight') {
       const dx = snap(p[0] - drag.p0[0]), dy = snap(p[1] - drag.p0[1]);
       drag.win.x = drag.x0.map(v => r2(v + dx));
@@ -898,6 +1046,17 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       out.push(`<rect class="g-sky" x="${a}" y="${c}" width="${b - a}" height="${d - c}" stroke-width="${1.5 * k}"/>`);
     }
 
+    // мебель
+    for (const it of f.furniture ?? []) {
+      const T = FURNITURE[it.type];
+      const poly = furnPoly(it);
+      out.push(`<polygon class="g-furn" points="${poly.map(q => q.join(',')).join(' ')}" fill="${it.color ?? T?.fill ?? '#ccc'}" stroke-width="${1 * k}"/>`);
+      const [w, d] = furnSize(it);
+      const fr = [rotP([it.at[0] - w / 2, it.at[1] + d / 2], it.rot ?? 0, it.at), rotP([it.at[0] + w / 2, it.at[1] + d / 2], it.rot ?? 0, it.at)];
+      out.push(`<line class="g-furn-front" x1="${fr[0][0]}" y1="${fr[0][1]}" x2="${fr[1][0]}" y2="${fr[1][1]}" stroke-width="${2.5 * k}"/>`);
+      if (sel?.kind === 'furn' && sel.it === it) out.push(`<polygon class="g-sel-rect" points="${poly.map(q => q.join(',')).join(' ')}" stroke-width="${3 * k}"/>`);
+    }
+
     // подписи помещений
     (f.rooms ?? []).forEach((room, i) => {
       if (!room.at) return;
@@ -961,7 +1120,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
   // ---------- свойства ----------
   let propsKey = null;
   function renderProps() {
-    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) : '') : tool) : sel ? sel.kind + ':' + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
+    const key = siteMode ? 'site:' + (sel ? sel.kind + (sel.i ?? '') + (sel.b ? house.site.buildings.indexOf(sel.b) : '') + (sel.it ? house.site.items.indexOf(sel.it) : '') + (sel.path ? house.site.paths.indexOf(sel.path) : '') : tool + palette[tool]) : sel ? sel.kind + ':' + (sel.it ? (floor().furniture ?? []).indexOf(sel.it) : '') + (sel.wall?.id ?? '') + (sel.opening ? house.floors[floorIdx].openings.indexOf(sel.opening) : '') : 'tool:' + tool;
     // не перерисовываем поля, пока пользователь в них печатает
     if (key === propsKey && props.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') {
       refreshReadouts();
@@ -984,6 +1143,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       html = siteProps(field, num, slider);
     } else if (!sel) {
       html = `<p class="ed-hint">${TOOLS.find(t => t[0] === tool)[2]}</p>`;
+      if (tool === 'furniture') {
+        const groups = [...new Set(Object.values(FURNITURE).map(T => T.group))];
+        html += `<label class="ed-field ed-pal-select" for="ed-pal"><span>Предмет</span><select id="ed-pal">${groups.map(gr => `<optgroup label="${gr}">${
+          Object.entries(FURNITURE).filter(([, T]) => T.group === gr).map(([key, T]) => `<option value="${key}" ${palette.furniture === key ? 'selected' : ''}>${T.name}</option>`).join('')}</optgroup>`).join('')}</select></label>`;
+      }
       const sk = skylights();
       if (tool === 'select' && sk.length) {
         html += `<div class="ed-sky-list"><span>Мансардные окна:</span>${sk.map((s, i) =>
@@ -1024,10 +1188,29 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
         </div>`;
     } else if (sel.kind === 'room') {
       const r = sel.room;
+      const opt = (obj, cur) => Object.entries(obj).map(([v, n]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${n}</option>`).join('');
+      const floorKind = r.texture ?? (/санузел|котельн|тамбур|прихож|ванн|туалет/i.test(r.name) ? 'tiles' : 'floor');
+      const wf = r.wallFinish ?? (r.wallColor ? 'paint' : '');
       html = `<div class="ed-props-head"><strong>Помещение</strong><button type="button" class="ed-danger" id="ed-del">Удалить подпись</button></div>
         <div class="ed-grid">
           ${field('ed-room-name', 'Название', String(r.name).replace(/"/g, '&quot;'), 'type="text" autocomplete="off"')}
+          <label class="ed-field" for="ed-room-floor"><span>Пол</span><select id="ed-room-floor">${opt(FLOOR_FINISHES, floorKind)}</select></label>
           <label class="ed-field" for="ed-room-color"><span>Цвет пола</span><input id="ed-room-color" type="color" value="${r.color ?? '#d9c9a8'}"></label>
+          <label class="ed-field" for="ed-room-wf"><span>Стены</span><select id="ed-room-wf"><option value="" ${wf ? '' : 'selected'}>Как в проекте</option>${opt(WALL_FINISHES, wf)}</select></label>
+          ${wf ? `<label class="ed-field" for="ed-room-wc"><span>${wf === 'tiles' ? 'Цвет стен выше плитки' : 'Цвет стен'}</span><input id="ed-room-wc" type="color" value="${r.wallColor ?? '#efe9dc'}"></label>` : ''}
+          ${wf === 'tiles' ? `<label class="ed-field" for="ed-room-tc"><span>Цвет плитки</span><input id="ed-room-tc" type="color" value="${r.tileColor ?? '#e9ecec'}"></label>${slider('ed-room-th', 'Плитка до высоты, м', r.tileHeight ?? 2.1, 0.3, 3, 0.05)}` : ''}
+        </div>`;
+    } else if (sel.kind === 'furn') {
+      const it = sel.it, T = FURNITURE[it.type] ?? { name: 'Предмет', fill: '#cccccc' };
+      const [w, d] = furnSize(it);
+      html = `<div class="ed-props-head"><strong>${T.name}</strong><button type="button" class="ed-danger" id="ed-del">Удалить</button></div>
+        <div class="ed-grid">
+          ${num('ed-fw', 'Ширина, м', w, 0.05)}
+          ${num('ed-fd', 'Глубина, м', d, 0.05)}
+          <label class="ed-field" for="ed-fc"><span>Цвет</span><input id="ed-fc" type="color" value="${it.color ?? T.fill}"></label>
+          ${slider('ed-frot', 'Поворот, °', it.rot ?? 0, 0, 359, 1)}
+          <div class="ed-btnrow"><button type="button" id="ed-frl">↺ 90°</button><button type="button" id="ed-frr">↻ 90°</button></div>
+          <p class="ed-hint">Тяните, чтобы передвинуть. Толстая линия — лицевая сторона.</p>
         </div>`;
     }
     props.innerHTML = html;
@@ -1121,7 +1304,26 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       const r = sel.room;
       on('ed-room-name', el => { r.name = el.value; });
       on('ed-room-color', el => { r.color = el.value; });
+      on('ed-room-floor', el => { r.texture = el.value; });
+      on('ed-room-wf', el => { if (el.value) r.wallFinish = el.value; else { delete r.wallFinish; delete r.wallColor; } propsKey = null; });
+      on('ed-room-wc', el => { r.wallColor = el.value; });
+      on('ed-room-tc', el => { r.tileColor = el.value; });
+      on('ed-room-th', el => { const v = parseFloat(el.value); if (v > 0.1) r.tileHeight = v; });
+    } else if (sel?.kind === 'furn') {
+      const it = sel.it;
+      const setRot = v => { it.rot = ((Math.round(v) % 360) + 360) % 360; };
+      on('ed-fw', el => { const v = parseFloat(el.value); if (v > 0.1) it.w = v; });
+      on('ed-fd', el => { const v = parseFloat(el.value); if (v > 0.05) it.d = v; });
+      on('ed-fc', el => { it.color = el.value; });
+      on('ed-frot', el => setRot(parseFloat(el.value) || 0));
+      for (const [id, dv] of [['ed-frl', -90], ['ed-frr', 90]]) props.querySelector('#' + id)?.addEventListener('click', () => { begin(); setRot((it.rot ?? 0) + dv); commit(); });
     }
+    props.querySelector('#ed-pal')?.addEventListener('change', e => { palette.furniture = e.target.value; });
+    props.querySelectorAll('[data-pal]').forEach(b => b.addEventListener('click', () => {
+      palette[tool] = b.dataset.pal;
+      propsKey = null;
+      render();
+    }));
   }
 
   // Во сколько раз длина по скату больше длины на плане.

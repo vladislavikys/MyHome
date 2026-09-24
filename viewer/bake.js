@@ -72,11 +72,12 @@ export function bakeGroup(group, planesOf = collectClipPlanes([group])) {
 
     let geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
     geo.applyMatrix4(m.matrixWorld);
-    for (const name of Object.keys(geo.attributes)) if (name !== 'position') geo.deleteAttribute(name);
+    // нормали сохраняем (сглаженные кроны, шары), кроме обрезанных плоскостями мешей
+    for (const name of Object.keys(geo.attributes)) if (name !== 'position' && name !== 'normal') geo.deleteAttribute(name);
     const planes = planesOf.get(m.material);
     if (planes?.length) geo = clipGeometry(geo, planes);
     if (!geo.attributes.position.count) continue;
-    geo.computeVertexNormals();
+    if (!geo.attributes.normal) geo.computeVertexNormals();
     if (m.userData.uvFn) m.userData.uvFn(geo); else boxUVs(geo);
 
     const flags = { collide: !!m.userData.collide, walkable: !!m.userData.walkable };

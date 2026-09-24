@@ -244,6 +244,17 @@
     .g-gate { stroke: #2f3337; stroke-linecap: butt; }
     .g-gate-gap { stroke-dasharray: .2 .15; opacity: .6; }
     .ed-btnrow { display: flex; gap: 6px; align-items: end; }
+    .ed-btnrow { flex-wrap: wrap; grid-column: 1 / -1; }
+    .g-area { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 1px; vector-effect: non-scaling-stroke; opacity: .75; }
+    .g-item { stroke: color-mix(in srgb, var(--ink) 45%, transparent); }
+    .g-plant { opacity: .7; }
+    .ed-palette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .ed-palette button { display: inline-flex; align-items: center; gap: 6px; }
+    .ed-palette button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .ed-pal-select { max-width: 320px; margin-top: 8px; }
+    .g-furn { stroke: color-mix(in srgb, var(--ink) 55%, transparent); opacity: .85; }
+    .g-furn-front { stroke: var(--ink); opacity: .6; }
+    .ed-palette i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
     .g-sel { stroke: var(--accent); opacity: .45; stroke-linecap: round; }
     .g-sel-rect { fill: none; stroke: var(--accent); }
     .g-handle { fill: var(--surface); stroke: var(--accent); }

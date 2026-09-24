@@ -15,6 +15,10 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { textureSet, skyTexture, doorTextures, boxUVs } from './looks.js';
 import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
+import { landscapeMats, buildArea, buildItem } from './landscape.js';
+import { lawnMaterial, grassField, grassUniforms } from './grass.js';
+import { furnitureMats, buildFurniture } from './interior.js';
+import { CELL } from './rooms.js';
 import { createPhoto } from './photo.js';
 
 // Координаты плана [x, y] (метры) переводятся в 3D как (x, высота, y).
@@ -82,7 +86,7 @@ const guv = groundGeo.attributes.uv;
 for (let i = 0; i < guv.count; i++) guv.setXY(i, guv.getX(i) * 300, guv.getY(i) * 300);
 const ground = new THREE.Mesh(
   groundGeo,
-  new THREE.MeshStandardMaterial({ color: '#8fae6e', map: grassTex.map, normalMap: grassTex.normalMap, roughness: 0.95 })
+  lawnMaterial(grassTex)
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -438,7 +442,9 @@ function regionMesh(runs, h, color, kind = 'floor') {
 const WET = /санузел|котельн|тамбур|прихож|ванн|туалет/i;
 const roomFloorKind = room => room.texture ?? (WET.test(room.name) ? 'tiles' : 'floor');
 
+let defaultsWallColor = '#efe9dc';
 function buildFloor(floor, defaults) {
+  defaultsWallColor = defaults.wallColor;
   const g = new THREE.Group();
   const slabT = floor.slab ?? 0.2;
   if (floor.outline) {
@@ -466,7 +472,108 @@ function buildFloor(floor, defaults) {
       if (fw) g.add(fw);
     }
   }
+  roomLinings(g, floor, defaults, regions);
+  const FM = furnitureMats();
+  for (const it of floor.furniture ?? []) {
+    const m = buildFurniture(it, FM);
+    m.position.y = floor.elevation + 0.01;
+    g.add(m);
+  }
   return g;
+}
+
+// Отделка стен по комнатам: тонкая облицовка на гранях стен, обращённых в комнату
+// (плитка до заданной высоты, покраска, вагонка, кирпич). Проёмы обходятся.
+const WALL_KIND = { paint: 'plaster', tiles: 'tiles', wood: 'soffit', brick: 'brick' };
+function roomLinings(g, floor, defaults, regions) {
+  const rooms = floor.rooms ?? [];
+  if (!rooms.some(r => r.wallFinish || r.wallColor)) return;
+  // растр комнат: строка → [x0, x1, room]
+  let y0 = Infinity;
+  for (const reg of regions) for (const [, , y] of reg.runs) y0 = Math.min(y0, y);
+  const rows = new Map();
+  for (const reg of regions) {
+    const room = reg.rooms.map(i => rooms[i]).find(r => r.wallFinish || r.wallColor) ?? rooms[reg.rooms[0]];
+    for (const [a, b, y] of reg.runs) {
+      const j = Math.round((y - y0) / CELL);
+      if (!rows.has(j)) rows.set(j, []);
+      rows.get(j).push([a, b, room]);
+    }
+  }
+  const roomAt = (x, y) => {
+    const row = rows.get(Math.floor((y - y0) / CELL + 1e-6));
+    return row?.find(([a, b]) => x >= a && x <= b)?.[2] ?? null;
+  };
+  for (const w of floor.walls) {
+    if (w.virtual || w.material === 'glass') continue;
+    const [x1, y1] = w.from, [x2, y2] = w.to;
+    const L = Math.hypot(x2 - x1, y2 - y1);
+    if (L < 0.2) continue;
+    const u = [(x2 - x1) / L, (y2 - y1) / L], n = [-u[1], u[0]];
+    const t = w.thickness ?? 0.3, H = w.height ?? floor.height;
+    const clip = w.clip === undefined ? defaults.clip : w.clip;
+    const ops = (floor.openings ?? []).filter(o => o.wall === (w.id ?? floor.walls.filter(x => !x.virtual).indexOf(w)));
+    for (const side of [1, -1]) {
+      // какая комната у этой грани — пробами через каждые 10 см
+      const STEP = 0.1, N = Math.max(1, Math.round(L / STEP));
+      const at = [];
+      for (let k = 0; k <= N; k++) {
+        const s = (k / N) * L, off = t / 2 + 0.12;
+        at.push(roomAt(x1 + u[0] * s + n[0] * off * side, y1 + u[1] * s + n[1] * off * side));
+      }
+      // пробелы у углов (рядом другая стена) — продолжаем соседнюю комнату
+      for (let pass = 0; pass < 2; pass++) {
+        for (let k = 1; k < at.length; k++) if (!at[k] && at[k - 1]) at[k] = at[k - 1];
+        for (let k = at.length - 2; k >= 0; k--) if (!at[k] && at[k + 1]) at[k] = at[k + 1];
+      }
+      let k0 = 0;
+      for (let k = 1; k <= at.length; k++) {
+        if (k < at.length && at[k] === at[k0]) continue;
+        const room = at[k0];
+        if (room && (room.wallFinish || room.wallColor)) {
+          const a = k0 === 0 ? -t / 2 : ((k0 - 0.5) / N) * L, b = k === at.length ? L + t / 2 : ((k - 0.5) / N) * L;
+          liningRun(g, w, side, a, b, H, t, clip, ops, room, floor);
+        }
+        k0 = k;
+      }
+    }
+  }
+}
+
+function liningRun(g, w, side, a, b, H, t, clip, ops, room, floor) {
+  const fin = room.wallFinish ?? 'paint';
+  const paintColor = room.wallColor ?? defaultsWallColor;
+  const bands = fin === 'tiles'
+    ? [[0, Math.min(H, room.tileHeight ?? 2.1), material(room.tileColor ?? '#e9ecec', clip, { kind: 'tiles' })],
+       ...(room.wallColor ? [[Math.min(H, room.tileHeight ?? 2.1), H, material(paintColor, clip, { kind: 'plaster' })]] : [])]
+    : [[0, H, material(fin === 'paint' ? paintColor : room.wallColor ?? (fin === 'wood' ? '#c9a27a' : '#a8583c'), clip, { kind: WALL_KIND[fin] })]];
+  const [x1, y1] = w.from, [x2, y2] = w.to;
+  const grp = new THREE.Group();
+  grp.position.set(x1, floor.elevation, y1);
+  grp.rotation.y = -Math.atan2(y2 - y1, x2 - x1);
+  const z = side * (t / 2 + 0.004), th = 0.006;
+  const piece = (p0, p1, h0, h1, mat) => {
+    if (p1 - p0 < 1e-3 || h1 - h0 < 1e-3) return;
+    const m = box(p1 - p0, h1 - h0, th, mat);
+    m.castShadow = false;
+    m.position.set((p0 + p1) / 2, (h0 + h1) / 2, z);
+    grp.add(m);
+  };
+  for (const [h0, h1, mat] of bands) {
+    let cur = a;
+    for (const o of [...ops].sort((p, q) => p.offset - q.offset)) {
+      const oa = o.offset, ob = o.offset + o.width;
+      if (ob <= a || oa >= b) continue;
+      const sill = o.sill ?? 0, top = sill + o.height;
+      piece(cur, Math.max(cur, oa), h0, h1, mat);
+      const ca = Math.max(a, oa), cb = Math.min(b, ob);
+      piece(ca, cb, h0, Math.min(h1, sill), mat);
+      piece(ca, cb, Math.max(h0, top), h1, mat);
+      cur = Math.max(cur, ob);
+    }
+    piece(cur, b, h0, h1, mat);
+  }
+  g.add(grp);
 }
 
 const FACES = [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]];
@@ -657,7 +764,7 @@ function build(house) {
     const fi = r.floor ?? 0;
     floorGroups[fi]?.add(railing(r, house.floors[fi].elevation));
   }
-  buildSite(house.site);
+  buildSite(house.site, house);
   // Обрезка по крыше, UV и слияние — один раз после сборки (нужно и для «Фото»).
   const planesOf = collectClipPlanes([...floorGroups, roofGroup]);
   for (const g of floorGroups) bakeGroup(g, planesOf);
@@ -805,8 +912,9 @@ const photo = createPhoto({
     if (walk.active) walkUi.exitWalk.click();
     if (tour.active) stopTour();
     controls.enabled = false;
+    if (grassMesh) grassMesh.visible = false;   // трассировщику трава не по силам
   },
-  onStop() { controls.enabled = true; },
+  onStop() { controls.enabled = true; if (grassMesh) grassMesh.visible = highQuality; },
 });
 document.getElementById('photo').onclick = () => photo.start();
 document.getElementById('photo-close').onclick = () => photo.stop();
@@ -822,6 +930,7 @@ const qualityEl = document.getElementById('quality');
 qualityEl.value = highQuality ? 'high' : 'fast';
 function applyQuality() {
   highQuality = qualityEl.value === 'high';
+  if (grassMesh) grassMesh.visible = highQuality;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, highQuality ? 2 : 1.25));
   const size = highQuality ? 4096 : 2048;
   if (sun.shadow.mapSize.x !== size) {
@@ -920,6 +1029,15 @@ function outbuilding(b) {
       else gm.position.set((x0 + x1) / 2, H, side > 0 ? y1 : y0);
       g.add(gm);
     }
+  } else if (b.roof === 'flat') {
+    // плоская: плита с небольшим свесом и металлическим отливом по краю
+    const ov = b.overhang ?? 0.15;
+    const plate = box(w + 2 * ov, 0.22, dpt + 2 * ov, pbr(b.roofColor ?? '#8d8f8c', null, { roughness: 0.6, metalness: 0.3 }));
+    plate.position.set((x0 + x1) / 2, H + 0.11, (y0 + y1) / 2);
+    g.add(plate);
+    const top = box(w + 2 * ov - 0.1, 0.02, dpt + 2 * ov - 0.1, pbr('#5d5f5f', 'gravel'));
+    top.position.set((x0 + x1) / 2, H + 0.23, (y0 + y1) / 2);
+    g.add(top);
   } else {
     // односкатная
     const drop = b.drop ?? 0.5;
@@ -1095,9 +1213,11 @@ function housePlace(site) {
   return { at: site?.house?.at ?? [0, 0], rot: site?.house?.rot ?? 0 };
 }
 
-function buildSite(site) {
+let grassMesh = null;
+function buildSite(site, house) {
   siteGroup.traverse(o => o.geometry?.dispose());
   siteGroup.clear();
+  grassMesh = null;
   if (!site) return;
   // Мир = система координат дома; участок разворачиваем обратно к нему.
   const place = housePlace(site);
@@ -1107,12 +1227,32 @@ function buildSite(site) {
   inner.position.set(-place.at[0], 0, -place.at[1]);
   frame.add(inner);
   siteGroup.add(frame);
-  const pav = pbr('#b9b2a6', 'paving');
-  for (const p of site.paths ?? []) {
-    const m = flatQuad(p.poly, 0.012, p.texture === 'gravel' ? pbr('#a39c90', 'stone') : pav);
-    m.userData.walkable = true;
-    inner.add(m);
-  }
+  const LM = landscapeMats();
+  (site.paths ?? []).forEach((a, i) => inner.add(buildArea(a, LM, i + 1)));
+  (site.items ?? []).forEach((it, i) => inner.add(buildItem(it, LM, i + 1)));
+  // живая трава: везде на участке, кроме дома, построек и покрытий
+  const toSite = ([x, y]) => {
+    const a = THREE.MathUtils.degToRad(place.rot), c = Math.cos(a), s = Math.sin(a);
+    return [place.at[0] + x * c - y * s, place.at[1] + x * s + y * c];
+  };
+  const excludes = [
+    (house.floors[0]?.outline ?? []).map(toSite),
+    ...(house.solids ?? []).filter(s => !(s.floor > 0) && s.bottom?.rect).map(s => {
+      const [x0, x1, y0, y1] = s.bottom.rect;
+      return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(toSite);
+    }),
+    ...(site.buildings ?? []).map(b => {
+      const [x0, y0, x1, y1] = b.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, a = THREE.MathUtils.degToRad(b.rot ?? 0);
+      return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]);
+    }),
+    ...(site.paths ?? []).map(p => p.poly),
+    ...(site.items ?? []).filter(it => it.type === 'gazebo').map(it => {
+      const h = 1.65 * (it.size ?? 1);
+      return [[-h, -h], [h, -h], [h, h], [-h, h]].map(([x, y]) => [it.at[0] + x, it.at[1] + y]);
+    }),
+  ];
+  grassMesh = grassField(site.boundary, excludes);
+  if (grassMesh) { grassMesh.visible = highQuality && !photo?.active; inner.add(grassMesh); }
   for (const b of site.buildings ?? []) {
     const [x0, y0, x1, y1] = b.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     const wrap = new THREE.Group();
@@ -1173,6 +1313,7 @@ document.getElementById('door-toggle').onclick = () => toggleNearestDoor();
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+  grassUniforms.uTime.value = clock.elapsedTime;
   animateDoors(dt);
   if (photo.active) { photo.update(); return; }
   if (tour.active) tour.update();
@@ -1312,11 +1453,13 @@ async function load() {
       for (const [group, g] of Object.entries(saved.house.variants ?? {})) {
         if (g.active && house.variants?.[group]?.active !== g.active) applyVariant(house, group, g.active);
       }
+      // участок, расставленный вручную, сохраняем, пока в проекте не вышла новая версия участка
+      if (saved.house.site && (saved.house.site.revision ?? 0) >= (house.site?.revision ?? 0)) house.site = saved.house.site;
       build(house);
       editor.setHouse(house, { keepView: true });
       renderVariants();
       await store.save(house, original.revision ?? null);
-      setStatus('Проект обновлён. Выбор вариантов перенесён, прежняя копия сохранена как резервная.');
+      setStatus('Проект обновлён. Выбор вариантов и участок перенесены, прежняя копия сохранена как резервная.');
     }
   } catch {
     setStatus('Сохранённую версию загрузить не удалось, показан проект');
@@ -1332,4 +1475,4 @@ load().catch(e => {
 });
 
 // Для отладки и скриншотов из консоли.
-window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, tour, get house() { return house; } };
+window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, tour, rebuild: () => build(house), get house() { return house; } };

@@ -101,6 +101,30 @@ const KINDS = {
       return [gap ? 0.35 : a, gap ? 0 : 0.55 + 0.25 * grain];
     }; })(),
   },
+  gravel: {  // мелкий гравий / отсев: камешки на сетке со сдвигом
+    tile: 1.0, mat: { roughness: 0.95 }, normalStrength: 5,
+    fn: (() => { const fine = makeNoise(131, 128); const C = 16; const r = rng(13);
+      const cell = Array.from({ length: C * C }, () => [r(), r(), 0.55 + r() * 0.45, 0.35 + r() * 0.2]);
+      return (u, v) => {
+        const cx = Math.floor(u * C), cy = Math.floor(v * C);
+        let best = 0, tone = 1;
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const ix = cx + ox, iy = cy + oy, c = cell[((iy + C) % C) * C + ((ix + C) % C)];
+          const d = Math.hypot(u * C - (ix + c[0]), v * C - (iy + c[1])) / c[3];
+          const h = Math.max(0, 1 - d * d);
+          if (h > best) { best = h; tone = c[2]; }
+        }
+        const n = fine(u * 128, v * 128);
+        return [0.45 + 0.4 * tone * Math.sqrt(best) + 0.12 * n, best * 0.85 + n * 0.15];
+      }; })(),
+  },
+  soil: {  // земля клумбы / мульча
+    tile: 1.0, mat: { roughness: 1 }, normalStrength: 4,
+    fn: (() => { const ns = N(141); const fine = makeNoise(143, 128); return (u, v) => {
+      const h = fbm(ns, u * 8, v * 8), f = fine(u * 128, v * 128);
+      return [0.6 + 0.25 * h + 0.15 * f, 0.6 * h + 0.4 * f];
+    }; })(),
+  },
   floor: {  // паркетная / инженерная доска
     tile: 2.4, mat: { roughness: 0.45 }, normalStrength: 4,
     fn: (() => { const ns = N(31); const r = rng(5); const tones = Array.from({ length: 64 }, () => 0.78 + r() * 0.2); return (u, v) => {
