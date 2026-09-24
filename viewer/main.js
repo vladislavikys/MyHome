@@ -11,9 +11,10 @@ import { applyVariant, tourPoints } from './variants.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { textureSet, skyTexture, doorTextures, boxUVs } from './looks.js';
+import { textureSet, skyTexture, doorTextures, boxUVs, setMaxAnisotropy } from './looks.js';
 import { sunPosition, localToUtc, sunTimes, fmtTime } from './sun.js';
 import { bakeGroup, collectClipPlanes, clearClipPlanes } from './bake.js';
 import { landscapeMats, buildArea, buildItem, buildRoads } from './landscape.js';
@@ -35,6 +36,7 @@ renderer.localClippingEnabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
 app.appendChild(renderer.domElement);
+setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
 
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.domElement.style.position = 'absolute';
@@ -1258,10 +1260,16 @@ window.addEventListener('keydown', ev => { if (photo.active && ev.key === 'Escap
 const qualityEl = document.getElementById('quality');
 qualityEl.value = highQuality ? 'high' : 'fast';
 function applyQuality() {
-  highQuality = qualityEl.value === 'high';
+  const q = qualityEl.value, ultra = q === 'ultra';
+  highQuality = q !== 'fast';
   if (grassMesh) grassMesh.visible = highQuality;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, highQuality ? 2 : 1.25));
-  const size = highQuality ? 4096 : 2048;
+  // «Ультра» — рендер в 2× большем разрешении и сжатие (суперсэмплинг): чёткие края, мелкие детали без ряби
+  const dpr = window.devicePixelRatio || 1;
+  const pr = ultra ? Math.min(dpr * 2, 3) : highQuality ? Math.min(Math.max(dpr, 1.5), 2) : Math.min(dpr, 1.25);
+  renderer.setPixelRatio(pr);
+  composer.setPixelRatio(pr);
+  gtao.updateGtaoMaterial({ samples: ultra ? 24 : 16 });
+  const size = ultra ? Math.min(8192, renderer.capabilities.maxTextureSize) : highQuality ? 4096 : 2048;
   if (sun.shadow.mapSize.x !== size) {
     sun.shadow.mapSize.set(size, size);
     sun.shadow.map?.dispose();
@@ -1757,6 +1765,32 @@ function setEditing(on) {
 
 ui.edit.onclick = () => setEditing(!document.body.classList.contains('editing'));
 editor.onClose(() => setEditing(false));
+
+// 3D-модель целиком (.glb) — для Twinmotion / Unreal Engine / Blender / D5 / Lumion
+async function exportGlb() {
+  const hidden = [];
+  const show = o => { if (!o.visible) { hidden.push(o); o.visible = true; } };
+  [...floorGroups, roofGroup, siteGroup, ground].forEach(show);
+  if (grassMesh?.visible) { grassMesh.visible = false; hidden.push({ restore: () => { grassMesh.visible = highQuality; } }); }
+  try {
+    const root = [...floorGroups, roofGroup, siteGroup, ground];
+    // служебные данные (двери, выбор, коллизии) в файл не пишем — иначе он раздувается в десятки раз
+    const saved = [];
+    for (const r of root) r.traverse(o => { if (Object.keys(o.userData).length) { saved.push([o, o.userData]); o.userData = {}; } });
+    let glb;
+    try { glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, maxTextureSize: 2048 }); }
+    finally { for (const [o, u] of saved) o.userData = u; }
+    await downloadFile('moy-dom.glb', new Blob([glb], { type: 'model/gltf-binary' }));
+  } finally {
+    for (const o of hidden) o.restore ? o.restore() : (o.visible = false);
+    applyVisibility();
+  }
+}
+editor.onExport?.(async () => {
+  setStatus('Готовлю 3D-модель…');
+  try { await exportGlb(); setStatus('3D-модель сохранена: moy-dom.glb'); }
+  catch (e) { console.error(e); if (e?.code !== 'declined') setStatus('Не получилось сохранить 3D-модель.'); }
+});
 editor.onDownload(async () => {
   try { await downloadJson(house); } catch (e) {
     if (e?.code !== 'declined') setStatus('Скачать не удалось. Попробуйте ещё раз.');
@@ -1813,6 +1847,7 @@ async function load() {
   renderVariants();
   view('3d');
   applySun();
+  applyQuality();
 
   // Сохранённая версия появляется позже, когда хранилище ответит.
   // пока не пришла сохранённая версия, редактирование закрыто: иначе правки ушли бы в копию, которую она заменит
@@ -1863,4 +1898,4 @@ load().catch(e => {
 });
 
 // Для отладки и скриншотов из консоли.
-window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, tour, rebuild: () => build(house), get house() { return house; } };
+window.viewer = { camera, controls, view, applyVisibility, ui, editor, walk, tour, exportGlb, rebuild: () => build(house), get house() { return house; } };

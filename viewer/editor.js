@@ -101,6 +101,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       <span class="ed-status" id="ed-status"></span>
       <button type="button" id="ed-reset">Вернуть проект</button>
       <button type="button" id="ed-download">Скачать house.json</button>
+      <button type="button" id="ed-export" title="Для Twinmotion, Unreal Engine, Blender, D5 Render, Lumion">Скачать 3D-модель (.glb)</button>
     </div>`;
 
   const $ = id => root.querySelector('#' + id);
@@ -1656,6 +1657,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     setStatus(text) { $('ed-status').textContent = text; },
     onReset(fn) { $('ed-reset').onclick = fn; },
     onDownload(fn) { $('ed-download').onclick = fn; },
+    onExport(fn) { $('ed-export').onclick = fn; },
     onClose(fn) { $('ed-close').onclick = fn; },
     resize() { if (view) { render(); } },
     fit,

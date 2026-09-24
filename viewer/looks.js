@@ -4,6 +4,9 @@ import * as THREE from 'three';
 // карта нормалей из высот и небо-окружение для освещения. 1 единица UV = 1 метр.
 
 const SIZE = 512;
+// анизотропная фильтрация: полы и стены под острым углом остаются чёткими (ставится по возможностям видеокарты)
+let ANISO = 8;
+export function setMaxAnisotropy(n) { ANISO = Math.max(1, Math.min(16, n || 8)); }
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -61,7 +64,7 @@ function bake(fn, { normalStrength = 2, rough = null } = {}) {
     const t = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    t.anisotropy = 8;
+    t.anisotropy = ANISO;
     t.generateMipmaps = true;
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.magFilter = THREE.LinearFilter;
@@ -398,7 +401,7 @@ export function doorTextures(style) {
   const mk = (d, srgb) => {
     const t = new THREE.DataTexture(d, W, H, THREE.RGBAFormat);
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 8;
+    t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = ANISO;
     t.flipY = false; t.needsUpdate = true;
     return t;
   };
