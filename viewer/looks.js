@@ -33,8 +33,8 @@ function fbm(noises, x, y) {
 }
 
 // Генератор: fn(u, v) → [albedo(0..1) или [r,g,b], height(0..1)], u,v в долях плитки 0..1.
-function bake(fn, { normalStrength = 2, rough = null } = {}) {
-  const n = SIZE;
+function bake(fn, { normalStrength = 2, size = SIZE } = {}) {
+  const n = size;
   const albedo = new Uint8ClampedArray(n * n * 4);
   const height = new Float32Array(n * n);
   for (let j = 0; j < n; j++) {
@@ -71,18 +71,28 @@ function bake(fn, { normalStrength = 2, rough = null } = {}) {
     t.needsUpdate = true;
     return t;
   };
-  return { map: tex(albedo, true), normalMap: tex(normal, false) };
+  // шероховатость: в швах и впадинах матовее, на гладких местах — с лёгким неровным блеском (канал G)
+  const rough = new Uint8ClampedArray(n * n * 4);
+  const rn = makeNoise(977, 64);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const h = height[j * n + i], k = (j * n + i) * 4;
+    const r = Math.min(1, Math.max(0.35, 1.02 - 0.28 * h + 0.16 * (rn(i / n * 64, j / n * 64) - 0.5)));
+    rough[k] = rough[k + 1] = rough[k + 2] = r * 255; rough[k + 3] = 255;
+  }
+  return { map: tex(albedo, true), normalMap: tex(normal, false), roughnessMap: tex(rough, false) };
 }
 
 const N = seed => [makeNoise(seed, 8), makeNoise(seed + 1, 16), makeNoise(seed + 2, 32), makeNoise(seed + 3, 64), makeNoise(seed + 4, 128)];
 
 // Описания фактур: tile — размер плитки в метрах; mat — параметры материала.
 const KINDS = {
-  plaster: {
-    tile: 1.6, mat: { roughness: 0.92 }, normalStrength: 3,
-    fn: (() => { const ns = N(11); return (u, v) => {
-      const h = fbm(ns, u * 8, v * 8);
-      return [0.9 + 0.1 * h, h];
+  plaster: {  // декоративная штукатурка: мелкое зерно песка + мягкие разводы от шпателя
+    tile: 1.6, size: 1024, mat: { roughness: 0.92 }, normalStrength: 2.2,
+    fn: (() => { const ns = N(11); const grain = makeNoise(13, 512), mid = makeNoise(17, 128); return (u, v) => {
+      const big = fbm(ns, u * 6, v * 6);
+      const g = grain(u * 512, v * 512), m = mid(u * 128, v * 128);
+      const h = 0.45 * big + 0.35 * m + 0.2 * g;
+      return [0.93 + 0.05 * big - 0.035 * (g > 0.8 ? 1 : 0) + 0.02 * m, h];
     }; })(),
   },
   'wood-dark': {
@@ -129,7 +139,7 @@ const KINDS = {
     }; })(),
   },
   herringbone: {  // керамогранит под дерево «ёлочкой»: плитка 1×4 (≈15×60 см), тонкая затирка, волокна вдоль плитки
-    tile: 1.2, mat: { roughness: 0.45 }, normalStrength: 1.6,
+    tile: 1.2, size: 1024, mat: { roughness: 0.45 }, normalStrength: 1.6,
     fn: (() => {
       const n = 4, K = 2 * n;                                  // период ёлочки — 2n×2n ширин плитки
       const ns = N(161), knot = makeNoise(167, 64);
@@ -276,9 +286,10 @@ export function textureSet(kind) {
   const k = KINDS[kind];
   if (!k) return null;
   if (!cache.has(kind)) {
-    const t = bake(k.fn, { normalStrength: k.normalStrength });
-    for (const tex of [t.map, t.normalMap]) tex.repeat.set(1 / k.tile, 1 / k.tile);
-    cache.set(kind, { ...t, mat: k.mat });
+    const t = bake(k.fn, { normalStrength: k.normalStrength, size: k.size ?? SIZE });
+    for (const tex of [t.map, t.normalMap, t.roughnessMap]) tex.repeat.set(1 / k.tile, 1 / k.tile);
+    // карта шероховатости идёт вместе с параметрами материала — её получают все материалы с фактурой
+    cache.set(kind, { map: t.map, normalMap: t.normalMap, mat: { ...k.mat, roughnessMap: t.roughnessMap } });
   }
   return cache.get(kind);
 }

@@ -12,6 +12,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { textureSet, skyTexture, doorTextures, boxUVs, setMaxAnisotropy } from './looks.js';
@@ -33,8 +34,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.localClippingEnabled = true;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.95;
+// нейтральная цветокоррекция (Khronos PBR Neutral): цвета материалов как на образцах, мягкие света
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 0.9;
 app.appendChild(renderer.domElement);
 setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
 
@@ -112,10 +114,25 @@ function applySun() {
   // небо и отражения
   const old = sky;
   sky = skyTexture(dir);
-  scene.background = sky;
-  scene.environment = sky;
   old.dispose();
-  scene.environmentIntensity = 0.35 + 0.55 * smooth(-8, 20, el);
+  if (hdri.tex && el >= 12) {
+    // днём — настоящая фотосфера неба (Poly Haven, CC0), повёрнутая так, чтобы её солнце совпало с нашим
+    const rotY = Math.atan2(dir.z, dir.x) - hdri.sunPhi;
+    // фон — фотосфера; рассеянный свет — от нейтрального неба (иначе зелень и синева фото красят стены в комнатах)
+    scene.background = hdri.tex;
+    scene.environment = sky;
+    scene.backgroundRotation.set(0, rotY, 0);
+    scene.environmentRotation.set(0, 0, 0);
+    scene.backgroundIntensity = 0.85;
+    scene.environmentIntensity = 0.35 + 0.55 * smooth(-8, 20, el);
+  } else {
+    scene.background = sky;
+    scene.environment = sky;
+    scene.backgroundRotation.set(0, 0, 0);
+    scene.environmentRotation.set(0, 0, 0);
+    scene.backgroundIntensity = 1;
+    scene.environmentIntensity = 0.35 + 0.55 * smooth(-8, 20, el);
+  }
   // днём — солнце (тёплое у горизонта), ночью — слабый холодный «лунный» свет
   const w = smooth(-3, 4, el);
   const lightDir = w > 0.05 ? dirOf(Math.max(el, 1.5), az) : dirOf(35, az + 180);
@@ -133,6 +150,25 @@ function applySun() {
   try { localStorage.setItem('myhome.sun', JSON.stringify(sunState)); } catch { /* нет хранилища */ }
   photo?.sceneChanged?.();
 }
+// Фотосфера неба: загружается в фоне; яркое солнце в ней приглушается (прямой свет даёт наше солнце),
+// направление её солнца запоминается для поворота.
+const hdri = { tex: null, sunPhi: 0 };
+new HDRLoader().setDataType(THREE.FloatType).load('hdri/noon_grass_2k.hdr', tex => {
+  const { data, width: w, height: h } = tex.image;
+  let best = 0, bi = 0;
+  for (let i = 0; i < w * h; i++) {
+    const l = data[i * 4] * 0.2126 + data[i * 4 + 1] * 0.7152 + data[i * 4 + 2] * 0.0722;
+    if (l > best) { best = l; bi = i; }
+  }
+  const CLAMP = 6;
+  for (let i = 0; i < w * h * 4; i++) if ((i & 3) !== 3 && data[i] > CLAMP) data[i] = CLAMP;
+  hdri.sunPhi = (((bi % w) + 0.5) / w - 0.5) * Math.PI * 2;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.needsUpdate = true;
+  hdri.tex = tex;
+  queueSun();
+}, undefined, () => { /* нет файла — остаётся нарисованное небо */ });
+
 function queueSun() { if (!sunQueued) { sunQueued = true; requestAnimationFrame(applySun); } }
 sunUi.date.value = sunState.date;
 sunUi.time.value = sunState.hours;
@@ -1236,6 +1272,8 @@ window.addEventListener('keydown', ev => { if (tour.active && ev.key === 'Escape
 const photoUi = {
   status: document.getElementById('photo-status'),
   save: document.getElementById('photo-save'),
+  size: document.getElementById('photo-size'),
+  denoise: document.getElementById('photo-denoise'),
 };
 const photo = createPhoto({
   renderer, scene, camera, ui: photoUi,
@@ -1244,15 +1282,19 @@ const photo = createPhoto({
     if (tour.active) stopTour();
     controls.enabled = false;
     if (grassMesh) grassMesh.visible = false;   // трассировщику трава не по силам
+    ground.material.color.set('#7da04c');     // шейдер газона трассировщику не виден — задаём цвет травы напрямую
   },
-  onStop() { controls.enabled = true; if (grassMesh) grassMesh.visible = highQuality; },
+  onStop() { controls.enabled = true; if (grassMesh) grassMesh.visible = highQuality; ground.material.color.set('#ffffff'); applyQuality(); },
+  // кадр в увеличенном разрешении: холст рисуется крупнее, на экране — сжатым
+  setScale(pr) { renderer.setPixelRatio(pr); composer.setPixelRatio(pr); resize(); },
 });
 document.getElementById('photo').onclick = () => photo.start();
 document.getElementById('photo-close').onclick = () => photo.stop();
 photoUi.save.onclick = () => {
+  photo.update();   // картинка в буфере — последний посчитанный проход
   renderer.domElement.toBlob(async blob => {
-    try { await downloadFile('dom-foto.png', blob); } catch (e) { if (e?.code !== 'declined') photoUi.status.textContent = 'Сохранить не удалось.'; }
-  }, 'image/png');
+    try { await downloadFile('dom-foto.jpg', blob); } catch (e) { if (e?.code !== 'declined') photoUi.status.textContent = 'Сохранить не удалось.'; }
+  }, 'image/jpeg', 0.93);
 };
 window.addEventListener('keydown', ev => { if (photo.active && ev.key === 'Escape') photo.stop(); });
 
