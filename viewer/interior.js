@@ -38,6 +38,7 @@ export const FURNITURE = {
   diningRound: { name: 'Круглый стол, 4 стула', group: 'Кухня', size: [2.1, 2.1], fill: '#a0795a' },
   kitchen: { name: 'Кухня (линия)', group: 'Кухня', size: [2.4, 0.62], fill: '#e7e3dc' },
   island: { name: 'Остров', group: 'Кухня', size: [1.8, 0.9], fill: '#e7e3dc' },
+  bar: { name: 'Барная стойка с кухонным столом', group: 'Кухня', size: [2.4, 1.0], fill: '#e7e3dc' },
   fridge: { name: 'Холодильник', group: 'Кухня', size: [0.62, 0.66], fill: '#d9dcdf' },
   oventower: { name: 'Колонна с духовкой', group: 'Кухня', size: [0.6, 0.6], fill: '#e7e3dc' },
   bath: { name: 'Ванна', group: 'Ванная', size: [1.7, 0.75], fill: '#f3f3f1' },
@@ -104,6 +105,23 @@ function chairAt(g, M, c, x, z, face) {
   rbox(s, 0.44, 0.05, 0.44, M.wood(c), 0, 0.46, 0);
   rbox(s, 0.44, 0.45, 0.04, M.wood(c), 0, 0.7, -0.2);
   for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) rbox(s, 0.035, 0.44, 0.035, M.black, a * 0.19, 0.22, b * 0.19);
+  s.position.set(x, 0, z);
+  s.rotation.y = face;
+  g.add(s);
+}
+
+// Барный табурет: сиденье на 0,76 м, низкая спинка, подножка. Смотрит вдоль −z (к стойке) при face = 0.
+function barStool(g, M, c, x, z, face) {
+  const s = new THREE.Group();
+  cyl(s, 0.2, 0.19, 0.06, M.fabric(c), 0, 0.76, 0, 24);
+  rbox(s, 0.34, 0.14, 0.035, M.fabric(c), 0, 0.9, 0.17);
+  for (const a of [-0.13, 0.13]) rbox(s, 0.025, 0.2, 0.025, M.black, a, 0.86, 0.17);
+  cyl(s, 0.028, 0.028, 0.72, M.black, 0, 0.37, 0, 10);
+  cyl(s, 0.22, 0.24, 0.02, M.black, 0, 0.01, 0, 24).castShadow = false;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 6, 24), M.black);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.3;
+  s.add(ring);
   s.position.set(x, 0, z);
   s.rotation.y = face;
   g.add(s);
@@ -240,6 +258,68 @@ export function buildFurniture(it, M) {
           cyl(g, 0.2, 0.2, 0.04, M.fabric('#6b5a4c'), x, 0.72, hd + 0.35, 20);
           cyl(g, 0.025, 0.025, 0.7, M.black, x, 0.35, hd + 0.35, 8);
         }
+      }
+      break;
+    }
+    case 'bar': {
+      // Спереди (+z, к гостиной) — барная столешница ~1,1 м с табуретами, сзади (−z, к кухне) — шкафы
+      // и рабочая столешница 0,9 м. it.style: 'step' — ступенька на панели, 'ledge' — деревянная доска на стойках,
+      // 'waterfall' — дерево с торцами до пола. it.cut = [слева, справа] — укоротить барную часть (обойти столб).
+      // it.hob / it.sink — место на рабочей столешнице (0…1), it.pendants — число подвесных светильников.
+      const style = it.style ?? 'step';
+      const wood = M.wood(it.barColor ?? '#8a5a3a');
+      const [c0, c1] = it.cut ?? [0, 0];
+      const bx0 = -hw + c0, bx1 = hw - c1, bw = bx1 - bx0, bc = (bx0 + bx1) / 2;
+      const zf = Math.min(hd - 0.2, -hd + 0.72);           // лицо корпуса со стороны гостиной
+      const cz = (-hd + zf) / 2;
+      // корпус со шкафами, двери и ручки к кухне
+      rbox(g, W, 0.1, zf + hd - 0.05, M.black, 0, 0.05, cz + 0.025);
+      rbox(g, W, 0.76, zf + hd - 0.02, M.matte(col), 0, 0.48, cz + 0.01, true);
+      const n = Math.max(1, Math.round(W / 0.6));
+      for (let i = 1; i < n; i++) rbox(g, 0.004, 0.74, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 0.48, -hd + 0.01);
+      for (let i = 0; i < n; i++) rbox(g, 0.3, 0.015, 0.015, M.black, -hw + (W * (i + 0.5)) / n, 0.8, -hd - 0.005);
+      const raised = style !== 'ledge';
+      const topZ1 = raised ? zf - 0.1 : zf;                  // рабочая столешница до панели
+      rbox(g, W, 0.04, topZ1 + hd + 0.02, M.counter, 0, 0.88, (topZ1 - hd - 0.02) / 2);
+      const at = f => (f === undefined || f === null || f === false ? null : -hw + W * f);
+      const hx = at(it.hob), sx = at(it.sink);
+      if (hx !== null) rbox(g, 0.58, 0.008, 0.5, M.black, hx, 0.904, -hd + 0.3);
+      if (sx !== null) {
+        rbox(g, 0.55, 0.012, 0.42, M.chrome, sx, 0.905, -hd + 0.28);
+        rbox(g, 0.47, 0.01, 0.34, M.black, sx, 0.9, -hd + 0.28);
+        cyl(g, 0.012, 0.012, 0.3, M.chrome, sx, 1.05, topZ1 - 0.06, 8);
+      }
+      const bz0 = raised ? zf - 0.18 : zf - 0.32, bd = hd - bz0, bzc = (bz0 + hd) / 2;
+      if (raised) {
+        // панель от пола до барной столешницы — прячет рабочую зону от гостиной
+        const pm = style === 'waterfall' ? wood : M.matte(it.panelColor ?? col);
+        rbox(g, bw, 1.06, 0.1, pm, bc, 0.53, zf - 0.05, true);
+        rbox(g, bw, 0.05, bd, style === 'waterfall' ? wood : M.counter, bc, 1.085, bzc);
+        if (style === 'waterfall') for (const x of [bx0 + 0.025, bx1 - 0.025]) rbox(g, 0.05, 1.06, bd, wood, x, 0.53, bzc, true);
+        else for (const x of [bx0 + 0.3, bx1 - 0.3]) rbox(g, 0.04, 0.2, bd - 0.14, M.black, x, 0.96, bzc + 0.05);
+      } else {
+        // деревянная доска над краем рабочей столешницы на чёрных стойках, у края — ножки до пола
+        rbox(g, bw, 0.06, bd, wood, bc, 1.1, bzc);
+        const k = Math.max(2, Math.ceil(bw / 1.1) + 1);
+        for (let i = 0; i < k; i++) {
+          const x = bx0 + 0.12 + ((bw - 0.24) * i) / (k - 1);
+          rbox(g, 0.04, 0.17, 0.04, M.black, x, 0.985, zf - 0.2);
+          if (i === 0 || i === k - 1) rbox(g, 0.05, 1.07, 0.05, M.black, x, 0.535, hd - 0.06);
+        }
+        rbox(g, bw, 0.9, 0.02, M.wood(it.barColor ?? '#8a5a3a'), bc, 0.45, zf + 0.01);
+      }
+      const ns = it.stools ?? Math.max(1, Math.floor(bw / 0.6));
+      for (let i = 0; i < ns; i++) barStool(g, M, it.stoolColor ?? '#5b4a3e', bx0 + (bw * (i + 0.5)) / ns, hd - 0.02, 0);
+      const np = it.pendants ?? 0, ceil = it.ceil ?? 2.7;
+      for (let i = 0; i < np; i++) {
+        const x = bx0 + (bw * (i + 0.5)) / np, y = 1.85;
+        cyl(g, 0.004, 0.004, ceil - y, M.black, x, (ceil + y) / 2, bzc, 6).castShadow = false;
+        const shade = cyl(g, 0.03, 0.14, 0.16, M.black, x, y - 0.08, bzc, 24);
+        shade.castShadow = false;
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8),
+          new THREE.MeshStandardMaterial({ color: '#fff4dc', emissive: '#ffd9a0', emissiveIntensity: 2 }));
+        bulb.position.set(x, y - 0.15, bzc);
+        g.add(bulb);
       }
       break;
     }
