@@ -49,14 +49,6 @@
    "Charlotte Baglioni"
   ]
  },
- "roof": {
-  "asset": "clay_roof_tiles",
-  "size": 4.0,
-  "color": false,
-  "authors": [
-   "Amal Kumar"
-  ]
- },
  "soffit": {
   "asset": "planks_brown_10",
   "size": 1.0,
@@ -79,14 +71,6 @@
   "color": false,
   "authors": [
    "Dimitrios Savva"
-  ]
- },
- "asphalt": {
-  "asset": "asphalt_02",
-  "size": 3.0,
-  "color": false,
-  "authors": [
-   "Rob Tuytel"
   ]
  },
  "fence-wood": {

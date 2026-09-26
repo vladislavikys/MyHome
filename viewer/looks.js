@@ -220,14 +220,17 @@ const KINDS = {
       };
     })(),
   },
-  roof: {  // металлочерепица: волна поперёк ската и ступени вдоль
-    tile: 1.4, mat: { roughness: 0.5, metalness: 0.3 }, normalStrength: 7,
+  roof: {  // металлочерепица (профиль «Монтеррей»): модуль 0,35 × 0,35 м — округлая волна поперёк ската,
+           // поперечная ступенька-«замок» вдоль ската; окрашенная сталь с полуматовым блеском
+    tile: 1.4, size: 1024, mat: { roughness: 0.34, metalness: 0.35 }, normalStrength: 40,
     fn: (u, v) => {
-      const wave = 0.5 + 0.5 * Math.cos(u * 4 * 2 * Math.PI);
-      const fv = (v * 4) % 1;
-      const step = fv < 0.12 ? fv / 0.12 : 1 - (fv - 0.12) * 0.25;
-      const h = 0.55 * wave + 0.45 * step;
-      return [0.78 + 0.22 * h, h];
+      const x = (u * 4) % 1, y = (v * 4) % 1;
+      const wave = Math.pow(Math.sin(Math.PI * x), 0.55);               // округлый гребень, узкая впадина
+      const ledge = 0.07;
+      const step = y < ledge ? y / ledge : 1 - 0.4 * Math.pow((y - ledge) / (1 - ledge), 1.4);
+      const h = 0.55 * wave * (0.55 + 0.45 * step) + 0.45 * step;
+      const shade = y < ledge ? 0.72 : 1;                                  // тень на торце ступеньки
+      return [(0.8 + 0.2 * wave) * shade, h];
     },
   },
   soffit: {  // вагонка
@@ -285,7 +288,7 @@ const KINDS = {
 // сохранить собственный цвет фото (иначе фото серое, а цвет задаёт материал — как у процедурных фактур).
 const PHOTO = {
   plaster: [2.0], 'wood-dark': [0.6], floor: [1.2], herringbone: [3.4], deck: [1.8], stone: [2.0],
-  roof: [4.0], soffit: [1.0], brick: [1.4, true], paving: [2.0], asphalt: [3.0], 'fence-wood': [1.0], soil: [1.3],
+  soffit: [1.0], brick: [1.4, true], paving: [2.0], 'fence-wood': [1.0], soil: [1.3],
 };
 const loader = new THREE.TextureLoader();
 function photoSet(kind) {

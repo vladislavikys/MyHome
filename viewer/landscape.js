@@ -39,7 +39,7 @@ export function landscapeMats() {
   };
   return {
     paving: pbr('#b9b2a6', 'paving'),
-    asphalt: pbr('#66676a', 'asphalt'),
+    asphalt: pbr('#2f3133', null, { roughness: 0.9 }),   // ровная тёмная полоса, без фактуры
     dirt: pbr('#9c9282', 'gravel'),
     shoulder: pbr('#8d877c', 'gravel'),
     curb: pbr('#b8b5ae', 'plaster', { roughness: 0.85 }),
