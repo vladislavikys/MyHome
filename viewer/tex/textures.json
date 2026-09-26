@@ -1,0 +1,108 @@
+{
+ "plaster": {
+  "asset": "white_stucco",
+  "size": 1.998,
+  "color": false,
+  "authors": [
+   "Amal Kumar"
+  ]
+ },
+ "wood-dark": {
+  "asset": "fine_grained_wood",
+  "size": 0.6,
+  "color": false,
+  "authors": [
+   "Rob Tuytel"
+  ]
+ },
+ "floor": {
+  "asset": "oak_wood_planks",
+  "size": 1.2,
+  "color": false,
+  "authors": [
+   "Dimitrios Savva"
+  ]
+ },
+ "herringbone": {
+  "asset": "herringbone_parquet",
+  "size": 3.4,
+  "color": false,
+  "authors": [
+   "Jenelle van Heerden",
+   "Sergej Majboroda"
+  ]
+ },
+ "deck": {
+  "asset": "wood_floor_deck",
+  "size": 1.8,
+  "color": false,
+  "authors": [
+   "Dimitrios Savva"
+  ]
+ },
+ "stone": {
+  "asset": "stone_wall",
+  "size": 2.0,
+  "color": false,
+  "authors": [
+   "Dario Barresi",
+   "Charlotte Baglioni"
+  ]
+ },
+ "roof": {
+  "asset": "clay_roof_tiles",
+  "size": 4.0,
+  "color": false,
+  "authors": [
+   "Amal Kumar"
+  ]
+ },
+ "soffit": {
+  "asset": "planks_brown_10",
+  "size": 1.0,
+  "color": false,
+  "authors": [
+   "Rob Tuytel"
+  ]
+ },
+ "brick": {
+  "asset": "red_brick",
+  "size": 1.4,
+  "color": true,
+  "authors": [
+   "Rob Tuytel"
+  ]
+ },
+ "paving": {
+  "asset": "rectangular_paving",
+  "size": 2.0,
+  "color": false,
+  "authors": [
+   "Dimitrios Savva"
+  ]
+ },
+ "asphalt": {
+  "asset": "asphalt_02",
+  "size": 3.0,
+  "color": false,
+  "authors": [
+   "Rob Tuytel"
+  ]
+ },
+ "fence-wood": {
+  "asset": "brown_planks_03",
+  "size": 1.0,
+  "color": false,
+  "authors": [
+   "Rob Tuytel"
+  ]
+ },
+ "soil": {
+  "asset": "brown_mud",
+  "size": 1.3,
+  "color": false,
+  "authors": [
+   "Rob Tuytel"
+  ]
+ }
+}

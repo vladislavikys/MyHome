@@ -281,8 +281,36 @@ const KINDS = {
   },
 };
 
+// Фото-фактуры Poly Haven (CC0, tex/*.jpg, см. tex/textures.json): размер образца в метрах и нужно ли
+// сохранить собственный цвет фото (иначе фото серое, а цвет задаёт материал — как у процедурных фактур).
+const PHOTO = {
+  plaster: [2.0], 'wood-dark': [0.6], floor: [1.2], herringbone: [3.4], deck: [1.8], stone: [2.0],
+  roof: [4.0], soffit: [1.0], brick: [1.4, true], paving: [2.0], asphalt: [3.0], 'fence-wood': [1.0], soil: [1.3],
+};
+const loader = new THREE.TextureLoader();
+function photoSet(kind) {
+  const [size, ownColor] = PHOTO[kind];
+  const load = (suffix, srgb) => {
+    const tx = loader.load(`tex/${kind}_${suffix}.jpg`);
+    tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+    tx.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    tx.anisotropy = ANISO;
+    tx.repeat.set(1 / size, 1 / size);
+    return tx;
+  };
+  const k = KINDS[kind];
+  return {
+    map: load('diff', true), normalMap: load('nor', false),
+    mat: { ...(k?.mat ?? {}), roughness: 1, roughnessMap: load('rough', false), ...(ownColor ? { color: 0xffffff } : {}) },
+  };
+}
+
 const cache = new Map();
 export function textureSet(kind) {
+  if (PHOTO[kind]) {
+    if (!cache.has(kind)) cache.set(kind, photoSet(kind));
+    return cache.get(kind);
+  }
   const k = KINDS[kind];
   if (!k) return null;
   if (!cache.has(kind)) {
