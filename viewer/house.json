@@ -1,6 +1,6 @@
 {
   "name": "Жилой дом 15,6 × 9,1 м (мансардный)",
-  "revision": 28,
+  "revision": 29,
   "source": "Проект 23/21-АС: планы М1:100, фасады, разрез 1-1, план кровли",
   "units": "m",
   "note": "x — вдоль осей 1→5 (ось 1 = 0), y — от оси В (0) к осям Б (8.1) и А (9.1). Оси — по наружным граням стен.",
@@ -43,7 +43,7 @@
         { "id": "S2", "from": [7.25, 7.95], "to": [3.25, 7.95], "thickness": 0.3 },
         { "id": "W", "from": [3.25, 7.95], "to": [3.25, 0.15], "thickness": 0.3 },
         { "id": "i-pantryW", "from": [8.55, 0.3], "to": [8.55, 3.8], "thickness": 0.1, "height": 3 },
-        { "id": "i-pantryS", "from": [8.55, 3.8], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
+        { "id": "i-pantryS", "from": [10, 3.8], "to": [11.45, 3.8], "thickness": 0.1, "height": 2.7 },
         { "id": "i-stairE", "from": [11.45, 0.3], "to": [11.45, 3.7], "thickness": 0.1, "height": 3 },
         { "id": "i-bedS", "from": [11.45, 3.68], "to": [15.3, 3.68], "thickness": 0.15, "height": 2.7 },
         { "id": "i-hallS", "from": [9.85, 5.4], "to": [15.3, 5.4], "thickness": 0.1, "height": 2.7 },
@@ -76,8 +76,8 @@
         { "id": "v-kitchenW", "from": [7.25, 7.95], "to": [7.25, 5.4], "thickness": 0.05, "virtual": true },
         { "id": "v-kitchenN", "from": [7.25, 5.4], "to": [9.95, 5.4], "thickness": 0.05, "virtual": true },
         { "id": "v-hallW", "from": [9.95, 3.8], "to": [9.95, 5.4], "thickness": 0.05, "virtual": true },
-        { "id": "v-stairS", "from": [9.95, 3.8], "to": [11.3, 3.8], "thickness": 0.05, "virtual": true },
-        { "id": "v-stairMid", "from": [9.95, 0.3], "to": [9.95, 3.8], "thickness": 0.05, "virtual": true }
+        { "id": "v-stairS", "from": [8.6, 3.8], "to": [10, 3.8], "thickness": 0.05, "virtual": true },
+        { "id": "v-stairMid", "from": [10.05, 0.3], "to": [10.05, 3.8], "thickness": 0.05, "virtual": true }
       ],
       "openings": [
         { "wall": "N", "type": "glassdoor", "offset": 0.7, "width": 1.6, "height": 2.1 },
@@ -111,14 +111,14 @@
         {
           "name": "6 Лестница",
           "color": "#b9a894",
-          "at": [10.6, 2.2],
+          "at": [9.3, 2.2],
           "texture": "herringbone",
           "id": "r-stair"
         },
         {
           "name": "7 Кладовая",
           "color": "#b9a894",
-          "at": [9.3, 2],
+          "at": [10.75, 2],
           "texture": "herringbone",
           "id": "r-pantry"
         },
@@ -137,7 +137,23 @@
           "note": "сечение и место — уточнить замером"
         }
       ],
-      "ceiling": { "color": "#e8dabf" }
+      "ceiling": { "color": "#e8dabf" },
+      "furniture": [
+        {
+          "type": "kitchen",
+          "at": [9.325, 8.49],
+          "w": 3.75,
+          "rot": 180,
+          "uppers": false,
+          "sink": 0.5,
+          "hob": null
+        },
+        { "type": "fridge", "at": [10.92, 5.79], "rot": 90 },
+        { "type": "oventower", "at": [10.95, 6.4], "rot": 90 },
+        { "type": "kitchen", "at": [10.94, 7.44], "w": 1.48, "rot": 90, "sink": null, "hob": 0.5 },
+        { "type": "island", "at": [7.9, 7.25], "w": 1.8, "d": 0.9, "rot": 90 },
+        { "type": "diningOval", "at": [5.05, 6.6], "rot": 0 }
+      ]
     },
     {
       "name": "2 этаж (мансарда)",
@@ -232,14 +248,6 @@
   ],
   "solids": [
     {
-      "id": "chimney",
-      "name": "Дымоход (камень)",
-      "color": "#a0553d",
-      "bottom": { "rect": [8.17, 8.55, -1.4, 0], "h": -0.3 },
-      "top": { "rect": [8.17, 8.55, 0.2, 1.05], "h": 8.32 },
-      "texture": "brick"
-    },
-    {
       "name": "Терраса",
       "color": "#a7825c",
       "bottom": { "rect": [0.3, 8.55, -2.45, 0], "h": -0.32 },
@@ -329,24 +337,24 @@
       "type": "panel",
       "name": "Стенка между маршами (кладовая под лестницей)",
       "floor": 0,
-      "from": [9.95, 0.3],
-      "to": [9.95, 3.8],
+      "from": [10.05, 0.3],
+      "to": [10.05, 3.8],
       "thickness": 0.1,
       "color": "#efe9dc",
-      "profile": [[0, 0], [3.5, 0], [3.5, 3.0], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
+      "profile": [[0, 0], [3.5, 0], [3.5, 3], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
     }
   ],
   "stairs": [
     {
-      "name": "Лестница на мансарду: марш, площадка, марш",
+      "name": "Лестница на мансарду: марш, площадка, марш (зеркально)",
       "h": [0, 3],
       "risers": 17,
       "thickness": 0.05,
       "color": "#a87c4f",
       "parts": [
-        { "flight": {"start": [10.7, 3.39], "dir": [0, -1], "width": 1.4, "count": 7, "depth": 0.27} },
-        { "landing": {"rect": [8.6, 0.3, 11.4, 1.5], "lead": [[11.4, 1.5], [10, 1.5]]} },
-        { "flight": {"start": [9.25, 1.5], "dir": [0, 1], "width": 1.3, "count": 8, "depth": 0.28125} }
+        { "flight": {"start": [9.3, 3.39], "dir": [0, -1], "width": 1.4, "count": 7, "depth": 0.27} },
+        { "landing": {"rect": [8.6, 0.3, 11.4, 1.5], "lead": [[10, 1.5], [8.6, 1.5]]} },
+        { "flight": {"start": [10.75, 1.5], "dir": [0, 1], "width": 1.3, "count": 8, "depth": 0.28125} }
       ]
     }
   ],
@@ -432,18 +440,18 @@
     }
   ],
   "railings": [
-    { "name": "Ограждение проёма лестницы", "floor": 1, "height": 0.95, "path": [[9.95, 3.75], [11.4, 3.75]] },
+    { "name": "Ограждение проёма лестницы", "floor": 1, "height": 0.95, "path": [[8.6, 3.75], [10.05, 3.75]] },
     {
       "name": "Перила 2-го марша",
       "floor": 0,
       "height": 0.9,
-      "path": [[9.95, 1.5, 1.588, 0.176], [9.95, 3.75, 3.0]]
+      "path": [[10.05, 1.5, 1.588, 0.176], [10.05, 3.75, 3]]
     }
   ],
   "variants": {
     "stairs": {
       "label": "Лестница",
-      "active": "u",
+      "active": "u-left",
       "options": {
         "u-left": {
           "name": "П-образная, начало слева (зеркально)",
@@ -459,7 +467,7 @@
                   {
                     "flight": { "start": [9.3, 3.39], "dir": [0, -1], "width": 1.4, "count": 7, "depth": 0.27 }
                   },
-                  { "landing": {"rect": [8.6, 0.3, 11.4, 1.5], "lead": [[10.0, 1.5], [8.6, 1.5]]} },
+                  { "landing": {"rect": [8.6, 0.3, 11.4, 1.5], "lead": [[10, 1.5], [8.6, 1.5]]} },
                   {
                     "flight": { "start": [10.75, 1.5], "dir": [0, 1], "width": 1.3, "count": 8, "depth": 0.28125 }
                   }
@@ -477,7 +485,7 @@
                 "name": "Перила 2-го марша",
                 "floor": 0,
                 "height": 0.9,
-                "path": [[10.05, 1.5, 1.588, 0.176], [10.05, 3.75, 3.0]]
+                "path": [[10.05, 1.5, 1.588, 0.176], [10.05, 3.75, 3]]
               }
             ],
             "floors.1.holes": [[[8.6, 0.3], [11.4, 0.3], [11.4, 3.75], [8.6, 3.75]]],
@@ -500,10 +508,10 @@
               "to": [10.05, 3.8],
               "thickness": 0.1,
               "color": "#efe9dc",
-              "profile": [[0, 0], [3.5, 0], [3.5, 3.0], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
+              "profile": [[0, 0], [3.5, 0], [3.5, 3], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
             },
-            "floors.0.walls#i-pantryS": { "id": "i-pantryS", "from": [10.0, 3.8], "to": [11.45, 3.8], "thickness": 0.1, "height": 2.7 },
-            "floors.0.walls#v-stairS": { "id": "v-stairS", "from": [8.6, 3.8], "to": [10.0, 3.8], "thickness": 0.05, "virtual": true },
+            "floors.0.walls#i-pantryS": { "id": "i-pantryS", "from": [10, 3.8], "to": [11.45, 3.8], "thickness": 0.1, "height": 2.7 },
+            "floors.0.walls#v-stairS": { "id": "v-stairS", "from": [8.6, 3.8], "to": [10, 3.8], "thickness": 0.05, "virtual": true },
             "floors.0.rooms#r-stair": {
               "name": "6 Лестница",
               "color": "#b9a894",
@@ -514,7 +522,7 @@
             "floors.0.rooms#r-pantry": {
               "name": "7 Кладовая",
               "color": "#b9a894",
-              "at": [10.75, 2.0],
+              "at": [10.75, 2],
               "texture": "herringbone",
               "id": "r-pantry"
             }
@@ -552,7 +560,7 @@
                 "name": "Перила 2-го марша",
                 "floor": 0,
                 "height": 0.9,
-                "path": [[9.95, 1.5, 1.588, 0.176], [9.95, 3.75, 3.0]]
+                "path": [[9.95, 1.5, 1.588, 0.176], [9.95, 3.75, 3]]
               }
             ],
             "floors.1.holes": [[[8.6, 0.3], [11.4, 0.3], [11.4, 3.75], [8.6, 3.75]]],
@@ -569,7 +577,7 @@
               "to": [9.95, 3.8],
               "thickness": 0.1,
               "color": "#efe9dc",
-              "profile": [[0, 0], [3.5, 0], [3.5, 3.0], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
+              "profile": [[0, 0], [3.5, 0], [3.5, 3], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
             },
             "floors.0.walls#i-pantryS": { "id": "i-pantryS", "from": [8.55, 3.8], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
             "floors.0.walls#v-stairS": { "id": "v-stairS", "from": [9.95, 3.8], "to": [11.3, 3.8], "thickness": 0.05, "virtual": true },
@@ -593,7 +601,7 @@
     },
     "chimney": {
       "label": "Дымоход",
-      "active": "yes",
+      "active": "no",
       "options": {
         "yes": {
           "name": "есть",

@@ -34,6 +34,8 @@ export const FURNITURE = {
   rug: { name: 'Ковёр', group: 'Гостиная', size: [2.0, 1.4], fill: '#b89c7c' },
   shelf: { name: 'Стеллаж', group: 'Гостиная', size: [1.0, 0.35], fill: '#8a6a4f' },
   dining: { name: 'Стол и 4 стула', group: 'Кухня', size: [1.6, 1.9], fill: '#a0795a' },
+  diningOval: { name: 'Овальный стол, 6 стульев', group: 'Кухня', size: [2.9, 2.1], fill: '#a0795a' },
+  diningRound: { name: 'Круглый стол, 4 стула', group: 'Кухня', size: [2.1, 2.1], fill: '#a0795a' },
   kitchen: { name: 'Кухня (линия)', group: 'Кухня', size: [2.4, 0.62], fill: '#e7e3dc' },
   island: { name: 'Остров', group: 'Кухня', size: [1.8, 0.9], fill: '#e7e3dc' },
   fridge: { name: 'Холодильник', group: 'Кухня', size: [0.62, 0.66], fill: '#d9dcdf' },
@@ -185,6 +187,25 @@ export function buildFurniture(it, M) {
       for (const x of [-tw / 4, tw / 4]) {
         chairAt(g, M, col, x, -td / 2 - 0.22, 0);
         chairAt(g, M, col, x, td / 2 + 0.22, Math.PI);
+      }
+      break;
+    }
+    case 'diningOval': case 'diningRound': {
+      // столешница-овал (или круг) на центральной опоре, стулья по кругу; W×D — габарит со стульями
+      const round = it.type === 'diningRound';
+      const tw = round ? Math.min(W, D) - 0.95 : W - 1.05, td = round ? tw : D - 1.05;
+      const top = cyl(g, 0.5, 0.5, 0.04, M.wood(col), 0, 0.75, 0, 48);
+      top.scale.set(tw, 1, td);
+      for (const x of round ? [0] : [-tw * 0.28, tw * 0.28]) {
+        cyl(g, 0.06, 0.08, 0.7, M.black, x, 0.37, 0, 16);
+        cyl(g, 0.24, 0.26, 0.03, M.black, x, 0.015, 0, 24).castShadow = false;
+      }
+      const seats = round ? [0, 1, 2, 3].map(i => i * Math.PI / 2 + Math.PI / 4) : null;
+      const place = (x, z, face) => chairAt(g, M, it.chairColor ?? col, x, z, face);
+      if (round) for (const a of seats) place(Math.cos(a) * (tw / 2 + 0.22), Math.sin(a) * (tw / 2 + 0.22), -a - Math.PI / 2);
+      else {
+        for (const x of [-tw * 0.22, tw * 0.22]) { place(x, -td / 2 - 0.22, 0); place(x, td / 2 + 0.22, Math.PI); }
+        place(-tw / 2 - 0.22, 0, Math.PI / 2); place(tw / 2 + 0.22, 0, -Math.PI / 2);
       }
       break;
     }
