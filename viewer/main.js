@@ -153,7 +153,13 @@ function applySun() {
 // Фотосфера неба: загружается в фоне; яркое солнце в ней приглушается (прямой свет даёт наше солнце),
 // направление её солнца запоминается для поворота.
 const hdri = { tex: null, sunPhi: 0 };
-new HDRLoader().setDataType(THREE.FloatType).load('hdri/noon_grass_2k.hdr', tex => {
+// файл хранится как base64-текст (.hdr.txt): так его отдаёт любой хостинг, включая страницу проекта
+fetch('hdri/noon_grass_2k.hdr.txt').then(r => (r.ok ? r.text() : Promise.reject(r.status))).then(b64 => {
+  const bin = atob(b64.trim()), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes]));
+}).then(url => new HDRLoader().setDataType(THREE.FloatType).load(url, tex => {
+  URL.revokeObjectURL(url);
   const { data, width: w, height: h } = tex.image;
   let best = 0, bi = 0;
   for (let i = 0; i < w * h; i++) {
@@ -167,7 +173,7 @@ new HDRLoader().setDataType(THREE.FloatType).load('hdri/noon_grass_2k.hdr', tex 
   tex.needsUpdate = true;
   hdri.tex = tex;
   queueSun();
-}, undefined, () => { /* нет файла — остаётся нарисованное небо */ });
+})).catch(() => { /* нет файла — остаётся нарисованное небо */ });
 
 function queueSun() { if (!sunQueued) { sunQueued = true; requestAnimationFrame(applySun); } }
 sunUi.date.value = sunState.date;
