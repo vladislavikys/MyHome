@@ -37,6 +37,7 @@ export const FURNITURE = {
   kitchen: { name: 'Кухня (линия)', group: 'Кухня', size: [2.4, 0.62], fill: '#e7e3dc' },
   island: { name: 'Остров', group: 'Кухня', size: [1.8, 0.9], fill: '#e7e3dc' },
   fridge: { name: 'Холодильник', group: 'Кухня', size: [0.62, 0.66], fill: '#d9dcdf' },
+  oventower: { name: 'Колонна с духовкой', group: 'Кухня', size: [0.6, 0.6], fill: '#e7e3dc' },
   bath: { name: 'Ванна', group: 'Ванная', size: [1.7, 0.75], fill: '#f3f3f1' },
   shower: { name: 'Душевая', group: 'Ванная', size: [0.9, 0.9], fill: '#cfe3ea' },
   toilet: { name: 'Унитаз', group: 'Ванная', size: [0.38, 0.62], fill: '#f3f3f1' },
@@ -196,14 +197,22 @@ export function buildFurniture(it, M) {
       for (let i = 1; i < n; i++) rbox(g, 0.004, 0.74, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 0.48, hd - 0.01);
       for (let i = 0; i < n; i++) rbox(g, 0.3, 0.015, 0.015, M.black, -hw + (W * (i + 0.5)) / n, 0.8, hd + 0.005);
       if (it.type === 'kitchen') {
-        rbox(g, W, 0.62, 0.35, M.matte(col), 0, 1.8, -hd + 0.175, true);
-        for (let i = 1; i < n; i++) rbox(g, 0.004, 0.6, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 1.8, -hd + 0.355);
-        // мойка и варочная
-        rbox(g, 0.5, 0.012, 0.4, M.chrome, -hw + Math.min(0.5, W * 0.25), 0.905, 0);
-        cyl(g, 0.012, 0.012, 0.3, M.chrome, -hw + Math.min(0.5, W * 0.25), 1.05, -hd + 0.08, 8);
-        if (W >= 1.2) {
-          rbox(g, 0.58, 0.008, 0.5, M.black, hw - Math.min(0.6, W * 0.3), 0.904, 0);
-          rbox(g, 0.6, 0.35, 0.3, M.chrome, hw - Math.min(0.6, W * 0.3), 1.65, -hd + 0.15);
+        // it.uppers = false — без верхних шкафов (под окном); it.sink / it.hob — положение по длине (0…1) или null
+        if (it.uppers !== false) {
+          rbox(g, W, 0.62, 0.35, M.matte(col), 0, 1.8, -hd + 0.175, true);
+          for (let i = 1; i < n; i++) rbox(g, 0.004, 0.6, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 1.8, -hd + 0.355);
+        }
+        const at = (f, def) => (f === undefined ? def : f === null || f === false ? null : -hw + W * f);
+        const sx = at(it.sink, -hw + Math.min(0.5, W * 0.25));
+        const hx = at(it.hob, W >= 1.2 ? hw - Math.min(0.6, W * 0.3) : null);
+        if (sx !== null) {
+          rbox(g, 0.55, 0.012, 0.42, M.chrome, sx, 0.905, 0);
+          rbox(g, 0.47, 0.01, 0.34, M.black, sx, 0.9, 0);
+          cyl(g, 0.012, 0.012, 0.3, M.chrome, sx, 1.05, -hd + 0.08, 8);
+        }
+        if (hx !== null) {
+          rbox(g, 0.58, 0.008, 0.5, M.black, hx, 0.904, 0);
+          if (it.uppers !== false) rbox(g, 0.6, 0.35, 0.3, M.chrome, hx, 1.65, -hd + 0.15);
         }
       } else {
         for (const x of [-hw * 0.5, hw * 0.5]) {
@@ -211,6 +220,15 @@ export function buildFurniture(it, M) {
           cyl(g, 0.025, 0.025, 0.7, M.black, x, 0.35, hd + 0.35, 8);
         }
       }
+      break;
+    }
+    case 'oventower': {
+      // колонна: духовка на уровне глаз, над ней микроволновка
+      rbox(g, W, 2.2, D, M.matte(col), 0, 1.1, 0, true);
+      rbox(g, W - 0.08, 0.58, 0.02, M.black, 0, 1.05, hd + 0.005);
+      rbox(g, W - 0.16, 0.34, 0.021, M.glass, 0, 1.06, hd + 0.012);
+      rbox(g, W - 0.08, 0.38, 0.02, M.black, 0, 1.6, hd + 0.005);
+      rbox(g, W - 0.12, 0.02, 0.03, M.chrome, 0, 1.3, hd + 0.02);
       break;
     }
     case 'fridge': {
