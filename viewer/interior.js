@@ -71,6 +71,7 @@ export function furnitureMats() {
     wood: c => get('w' + c, () => pbr(c, 'wood-dark', { roughness: 0.55 })),
     matte: c => get('m' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 })),
     gloss: c => get('g' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.12 })),
+    steel: get('steel', () => new THREE.MeshStandardMaterial({ color: '#c3c7ca', roughness: 0.3, metalness: 0.85 })),
     chrome: get('chrome', () => new THREE.MeshStandardMaterial({ color: '#d9dde0', roughness: 0.12, metalness: 1 })),
     black: get('black', () => new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.35, metalness: 0.4 })),
     counter: get('counter', () => pbr('#dcd7cf', 'plaster', { roughness: 0.25, normalScale: new THREE.Vector2(0.15, 0.15) })),
@@ -108,6 +109,75 @@ function chairAt(g, M, c, x, z, face) {
   s.position.set(x, 0, z);
   s.rotation.y = face;
   g.add(s);
+}
+
+// Столешница с вырезами под мойки: полосы вокруг каждого выреза. holes — [{ x, z, w, d }].
+function counterTop(g, M, x0, x1, z0, z1, holes = [], y = 0.88, t = 0.04, mat = M.counter) {
+  let cx = x0;
+  for (const h of [...holes].sort((a, b) => a.x - b.x)) {
+    const hx0 = h.x - h.w / 2, hz0 = h.z - h.d / 2, hz1 = h.z + h.d / 2;
+    if (hx0 > cx) rbox(g, hx0 - cx, t, z1 - z0, mat, (cx + hx0) / 2, y, (z0 + z1) / 2);
+    if (hz0 > z0) rbox(g, h.w, t, hz0 - z0, mat, h.x, y, (z0 + hz0) / 2);
+    if (z1 > hz1) rbox(g, h.w, t, z1 - hz1, mat, h.x, y, (hz1 + z1) / 2);
+    cx = h.x + h.w / 2;
+  }
+  if (x1 > cx) rbox(g, x1 - cx, t, z1 - z0, mat, (cx + x1) / 2, y, (z0 + z1) / 2);
+}
+
+// Корпус нижних шкафов (от цоколя до top); под мойками верх опущен до low, чтобы чаша не упиралась.
+function cabinetBody(g, mat, x0, x1, z0, z1, holes = [], top = 0.86, low = 0.68) {
+  const box = (a, b, h) => { if (b - a > 0.001) rbox(g, b - a, h - 0.1, z1 - z0, mat, (a + b) / 2, 0.1 + (h - 0.1) / 2, (z0 + z1) / 2, true); };
+  let cx = x0;
+  for (const h of [...holes].sort((a, b) => a.x - b.x)) {
+    const a = h.x - h.w / 2 - 0.02, b = h.x + h.w / 2 + 0.02;
+    box(cx, a, top);
+    box(a, b, low);
+    for (const z of [z0 + 0.01, z1 - 0.01]) rbox(g, b - a, top - low, 0.02, mat, (a + b) / 2, (top + low) / 2, z);
+    cx = b;
+  }
+  box(cx, x1, top);
+}
+
+// Мойка в вырезе: чаша ниже столешницы, бортик, слив, смеситель с изогнутым изливом.
+// faucetZ — где стоит смеситель, dir — куда смотрит излив (+1 — в сторону +z).
+function sinkBowl(g, M, x, z, w, d, faucetZ, dir, { top = 0.9, depth = 0.18, mat = M.steel } = {}) {
+  const b = top - depth, t = 0.01;
+  rbox(g, w, t, d, mat, x, b + t / 2, z);
+  for (const s of [-1, 1]) {
+    rbox(g, t, depth, d, mat, x + s * (w / 2 - t / 2), b + depth / 2, z);
+    rbox(g, w, depth, t, mat, x, b + depth / 2, z + s * (d / 2 - t / 2));
+  }
+  const r = 0.025;
+  for (const s of [-1, 1]) {
+    rbox(g, w + 2 * r, 0.006, r, mat, x, top + 0.003, z + s * (d / 2 + r / 2));
+    rbox(g, r, 0.006, d, mat, x + s * (w / 2 + r / 2), top + 0.003, z);
+  }
+  cyl(g, 0.035, 0.035, 0.004, M.black, x, b + t + 0.002, z, 16).castShadow = false;
+  cyl(g, 0.024, 0.027, 0.04, M.chrome, x, top + 0.02, faucetZ, 12);
+  cyl(g, 0.012, 0.012, 0.28, M.chrome, x, top + 0.18, faucetZ, 10);
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.012, 8, 16, Math.PI), M.chrome);
+  arc.rotation.y = Math.PI / 2;
+  arc.position.set(x, top + 0.32, faucetZ + dir * 0.08);
+  arc.castShadow = true;
+  g.add(arc);
+  cyl(g, 0.012, 0.01, 0.06, M.chrome, x, top + 0.29, faucetZ + dir * 0.16, 10);
+}
+
+// Островная вытяжка: козырёк над варочной панелью, трапеция и короб до потолка.
+function islandHood(g, M, x, z, ceil, w = 0.9, d = 0.5) {
+  const y0 = 1.62;
+  rbox(g, w, 0.05, d, M.steel, x, y0 + 0.025, z);
+  rbox(g, w - 0.06, 0.004, d - 0.06, M.black, x, y0 - 0.002, z).castShadow = false;
+  const geo = new THREE.CylinderGeometry(0.11 * Math.SQRT2, (d / 2) * Math.SQRT2, 0.22, 4, 1).toNonIndexed();
+  geo.rotateY(Math.PI / 4);
+  geo.computeVertexNormals();
+  const fr = new THREE.Mesh(geo, M.steel);
+  fr.scale.x = w / d;
+  fr.position.set(x, y0 + 0.05 + 0.11, z);
+  fr.castShadow = fr.receiveShadow = true;
+  g.add(fr);
+  const yb = y0 + 0.27;
+  rbox(g, 0.22 * w / d, ceil - yb, 0.22, M.steel, x, (ceil + yb) / 2, z);
 }
 
 // Барный табурет: сиденье на 0,76 м, низкая спинка, подножка. Смотрит вдоль −z (к стойке) при face = 0.
@@ -229,9 +299,12 @@ export function buildFurniture(it, M) {
     }
     case 'kitchen': case 'island': {
       // нижние шкафы, столешница; у линии — фартук, верхние шкафы, мойка и варочная панель
+      const at = (f, def) => (f === undefined ? def : f === null || f === false ? null : -hw + W * f);
+      const sx = it.type === 'kitchen' ? at(it.sink, -hw + Math.min(0.5, W * 0.25)) : null;
+      const holes = sx !== null ? [{ x: sx, z: 0, w: 0.5, d: 0.38 }] : [];
       rbox(g, W, 0.1, D - 0.05, M.black, 0, 0.05, -0.025);
-      rbox(g, W, 0.76, D - 0.02, M.matte(col), 0, 0.48, -0.01, true);
-      rbox(g, W, 0.04, D, M.counter, 0, 0.88, 0);
+      cabinetBody(g, M.matte(col), -hw, hw, -hd, hd - 0.02, holes);
+      counterTop(g, M, -hw, hw, -hd, hd, holes);
       const n = Math.max(1, Math.round(W / 0.6));
       for (let i = 1; i < n; i++) rbox(g, 0.004, 0.74, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 0.48, hd - 0.01);
       for (let i = 0; i < n; i++) rbox(g, 0.3, 0.015, 0.015, M.black, -hw + (W * (i + 0.5)) / n, 0.8, hd + 0.005);
@@ -241,14 +314,8 @@ export function buildFurniture(it, M) {
           rbox(g, W, 0.62, 0.35, M.matte(col), 0, 1.8, -hd + 0.175, true);
           for (let i = 1; i < n; i++) rbox(g, 0.004, 0.6, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 1.8, -hd + 0.355);
         }
-        const at = (f, def) => (f === undefined ? def : f === null || f === false ? null : -hw + W * f);
-        const sx = at(it.sink, -hw + Math.min(0.5, W * 0.25));
         const hx = at(it.hob, W >= 1.2 ? hw - Math.min(0.6, W * 0.3) : null);
-        if (sx !== null) {
-          rbox(g, 0.55, 0.012, 0.42, M.chrome, sx, 0.905, 0);
-          rbox(g, 0.47, 0.01, 0.34, M.black, sx, 0.9, 0);
-          cyl(g, 0.012, 0.012, 0.3, M.chrome, sx, 1.05, -hd + 0.08, 8);
-        }
+        if (sx !== null) sinkBowl(g, M, sx, 0, 0.5, 0.38, -hd + 0.055, 1);
         if (hx !== null) {
           rbox(g, 0.58, 0.008, 0.5, M.black, hx, 0.904, 0);
           if (it.uppers !== false) rbox(g, 0.6, 0.35, 0.3, M.chrome, hx, 1.65, -hd + 0.15);
@@ -273,22 +340,22 @@ export function buildFurniture(it, M) {
       const zf = Math.min(hd - 0.2, -hd + 0.72);           // лицо корпуса со стороны гостиной
       const cz = (-hd + zf) / 2;
       // корпус со шкафами, двери и ручки к кухне
+      const at = f => (f === undefined || f === null || f === false ? null : -hw + W * f);
+      const hx = at(it.hob), sx = at(it.sink), ceil = it.ceil ?? 2.7;
+      const holes = sx !== null ? [{ x: sx, z: -hd + 0.27, w: 0.5, d: 0.38 }] : [];
       rbox(g, W, 0.1, zf + hd - 0.05, M.black, 0, 0.05, cz + 0.025);
-      rbox(g, W, 0.76, zf + hd - 0.02, M.matte(col), 0, 0.48, cz + 0.01, true);
+      cabinetBody(g, M.matte(col), -hw, hw, -hd + 0.02, zf, holes);
       const n = Math.max(1, Math.round(W / 0.6));
       for (let i = 1; i < n; i++) rbox(g, 0.004, 0.74, 0.01, M.matte('#a9a49c'), -hw + (W * i) / n, 0.48, -hd + 0.01);
       for (let i = 0; i < n; i++) rbox(g, 0.3, 0.015, 0.015, M.black, -hw + (W * (i + 0.5)) / n, 0.8, -hd - 0.005);
       const raised = style !== 'ledge';
       const topZ1 = raised ? zf - 0.1 : zf;                  // рабочая столешница до панели
-      rbox(g, W, 0.04, topZ1 + hd + 0.02, M.counter, 0, 0.88, (topZ1 - hd - 0.02) / 2);
-      const at = f => (f === undefined || f === null || f === false ? null : -hw + W * f);
-      const hx = at(it.hob), sx = at(it.sink);
-      if (hx !== null) rbox(g, 0.58, 0.008, 0.5, M.black, hx, 0.904, -hd + 0.3);
-      if (sx !== null) {
-        rbox(g, 0.55, 0.012, 0.42, M.chrome, sx, 0.905, -hd + 0.28);
-        rbox(g, 0.47, 0.01, 0.34, M.black, sx, 0.9, -hd + 0.28);
-        cyl(g, 0.012, 0.012, 0.3, M.chrome, sx, 1.05, topZ1 - 0.06, 8);
+      counterTop(g, M, -hw, hw, -hd - 0.02, topZ1, holes);
+      if (hx !== null) {
+        rbox(g, 0.58, 0.008, 0.5, M.black, hx, 0.904, -hd + 0.3);
+        if (it.hood !== false) islandHood(g, M, hx, -hd + 0.3, ceil);
       }
+      if (sx !== null) sinkBowl(g, M, sx, -hd + 0.27, 0.5, 0.38, topZ1 - 0.05, -1);
       const bz0 = raised ? zf - 0.18 : zf - 0.32, bd = hd - bz0, bzc = (bz0 + hd) / 2;
       if (raised) {
         // панель от пола до барной столешницы — прячет рабочую зону от гостиной
@@ -310,9 +377,17 @@ export function buildFurniture(it, M) {
       }
       const ns = it.stools ?? Math.max(1, Math.floor(bw / 0.6));
       for (let i = 0; i < ns; i++) barStool(g, M, it.stoolColor ?? '#5b4a3e', bx0 + (bw * (i + 0.5)) / ns, hd - 0.02, 0);
-      const np = it.pendants ?? 0, ceil = it.ceil ?? 2.7;
-      for (let i = 0; i < np; i++) {
-        const x = bx0 + (bw * (i + 0.5)) / np, y = 1.85;
+      // подвесы над барной частью; если есть вытяжка — по обе стороны от неё
+      const np = it.pendants ?? 0, hood = hx !== null && it.hood !== false;
+      const spans = hood ? [[bx0, Math.max(bx0, hx - 0.5)], [Math.min(bx1, hx + 0.5), bx1]].filter(([a, b]) => b - a > 0.25) : [[bx0, bx1]];
+      const total = spans.reduce((t, [a, b]) => t + b - a, 0);
+      const px = [];
+      spans.forEach(([a, b], k) => {
+        const m = k === spans.length - 1 ? np - px.length : Math.round((np * (b - a)) / total);
+        for (let i = 0; i < m; i++) px.push(a + ((b - a) * (i + 0.5)) / m);
+      });
+      for (const x of px) {
+        const y = 1.85;
         cyl(g, 0.004, 0.004, ceil - y, M.black, x, (ceil + y) / 2, bzc, 6).castShadow = false;
         const shade = cyl(g, 0.03, 0.14, 0.16, M.black, x, y - 0.08, bzc, 24);
         shade.castShadow = false;
@@ -366,9 +441,9 @@ export function buildFurniture(it, M) {
     }
     case 'sink': {
       rbox(g, W, 0.5, D - 0.02, M.wood(col === T.fill ? '#8a6a4f' : col), 0, 0.55, -0.01, true);
-      rbox(g, W, 0.12, D, M.gloss('#f3f3f1'), 0, 0.86, 0);
-      rbox(g, W * 0.6, 0.02, D * 0.6, M.gloss('#dfe9ec'), 0, 0.915, 0.02);
-      cyl(g, 0.012, 0.012, 0.2, M.chrome, 0, 1.0, -hd + 0.06, 8);
+      const bw = Math.min(0.5, W * 0.62), bd = Math.min(0.3, D - 0.2), bz = 0.03;
+      counterTop(g, M, -hw, hw, -hd, hd, [{ x: 0, z: bz, w: bw, d: bd }], 0.86, 0.12, M.gloss('#f3f3f1'));
+      sinkBowl(g, M, 0, bz, bw, bd, -hd + 0.05, 1, { top: 0.92, depth: 0.12, mat: M.gloss('#f3f3f1') });
       rbox(g, Math.min(0.8, W), 0.8, 0.02, M.gloss('#cfdde2'), 0, 1.55, -hd + 0.01);    // зеркало
       break;
     }

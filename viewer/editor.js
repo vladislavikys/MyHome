@@ -1445,7 +1445,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${num('ed-bst', 'Табуретов', it.stools ?? Math.max(1, Math.floor((w - (it.cut?.[0] ?? 0) - (it.cut?.[1] ?? 0)) / 0.6)), 1)}
             ${num('ed-bpd', 'Подвесных светильников', it.pendants ?? 0, 1)}
             <label class="ed-field" for="ed-bbc"><span>Цвет дерева</span><input id="ed-bbc" type="color" value="${it.barColor ?? '#8a5a3a'}"></label>
-            <label class="ed-check" for="ed-bhob"><input id="ed-bhob" type="checkbox" ${it.hob != null ? 'checked' : ''}> Варочная панель на стойке</label>` : ''}
+            <label class="ed-check" for="ed-bhob"><input id="ed-bhob" type="checkbox" ${it.hob != null ? 'checked' : ''}> Варочная панель на стойке</label>
+            ${it.hob != null ? `<label class="ed-check" for="ed-bhood"><input id="ed-bhood" type="checkbox" ${it.hood !== false ? 'checked' : ''}> Вытяжка над ней</label>` : ''}
+            <label class="ed-check" for="ed-bsink"><input id="ed-bsink" type="checkbox" ${it.sink != null ? 'checked' : ''}> Мойка на стойке</label>` : ''}
           <div class="ed-move"><span>Сдвинуть:</span>
             <button type="button" data-fnudge="-1,0" aria-label="Влево">←</button><button type="button" data-fnudge="0,-1" aria-label="Вверх">↑</button>
             <button type="button" data-fnudge="0,1" aria-label="Вниз">↓</button><button type="button" data-fnudge="1,0" aria-label="Вправо">→</button> <span>на 10 см</span></div>
@@ -1574,7 +1576,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-bst', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 8) it.stools = v; });
       on('ed-bpd', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 6) it.pendants = v; });
       on('ed-bbc', el => { it.barColor = el.value; });
-      on('ed-bhob', el => { if (el.checked) it.hob = 0.5; else delete it.hob; });
+      on('ed-bhob', el => { if (el.checked) it.hob = it.sink != null ? 0.3 : 0.5; else delete it.hob; propsKey = null; });
+      on('ed-bhood', el => { if (el.checked) delete it.hood; else it.hood = false; });
+      on('ed-bsink', el => { if (el.checked) it.sink = it.hob != null ? 0.75 : 0.5; else delete it.sink; });
       on('ed-frot', el => setRot(parseFloat(el.value) || 0));
       for (const [id, dv] of [['ed-frl', -90], ['ed-frr', 90]]) props.querySelector('#' + id)?.addEventListener('click', () => { begin(); setRot((it.rot ?? 0) + dv); commit(); });
       props.querySelectorAll('[data-fnudge]').forEach(b => b.addEventListener('click', () => {
