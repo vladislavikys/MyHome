@@ -1439,6 +1439,13 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           <label class="ed-field" for="ed-fc"><span>Цвет</span><input id="ed-fc" type="color" value="${it.color ?? T.fill}"></label>
           ${slider('ed-frot', 'Поворот, °', it.rot ?? 0, 0, 359, 1)}
           <div class="ed-btnrow"><button type="button" id="ed-frl">↺ 90°</button><button type="button" id="ed-frr">↻ 90°</button></div>
+          ${it.type === 'bar' ? `<label class="ed-field" for="ed-bstyle"><span>Исполнение</span><select id="ed-bstyle">
+            ${Object.entries({ step: 'Ступенька (панель + столешница)', ledge: 'Деревянная доска на стойках', waterfall: 'Дерево «водопадом»' })
+              .map(([v, n]) => `<option value="${v}" ${(it.style ?? 'step') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+            ${num('ed-bst', 'Табуретов', it.stools ?? Math.max(1, Math.floor((w - (it.cut?.[0] ?? 0) - (it.cut?.[1] ?? 0)) / 0.6)), 1)}
+            ${num('ed-bpd', 'Подвесных светильников', it.pendants ?? 0, 1)}
+            <label class="ed-field" for="ed-bbc"><span>Цвет дерева</span><input id="ed-bbc" type="color" value="${it.barColor ?? '#8a5a3a'}"></label>
+            <label class="ed-check" for="ed-bhob"><input id="ed-bhob" type="checkbox" ${it.hob != null ? 'checked' : ''}> Варочная панель на стойке</label>` : ''}
           <div class="ed-move"><span>Сдвинуть:</span>
             <button type="button" data-fnudge="-1,0" aria-label="Влево">←</button><button type="button" data-fnudge="0,-1" aria-label="Вверх">↑</button>
             <button type="button" data-fnudge="0,1" aria-label="Вниз">↓</button><button type="button" data-fnudge="1,0" aria-label="Вправо">→</button> <span>на 10 см</span></div>
@@ -1563,6 +1570,11 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-fw', el => { const v = parseFloat(el.value); if (v > 0.1) it.w = v; });
       on('ed-fd', el => { const v = parseFloat(el.value); if (v > 0.05) it.d = v; });
       on('ed-fc', el => { it.color = el.value; });
+      on('ed-bstyle', el => { it.style = el.value; });
+      on('ed-bst', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 8) it.stools = v; });
+      on('ed-bpd', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 6) it.pendants = v; });
+      on('ed-bbc', el => { it.barColor = el.value; });
+      on('ed-bhob', el => { if (el.checked) it.hob = 0.5; else delete it.hob; });
       on('ed-frot', el => setRot(parseFloat(el.value) || 0));
       for (const [id, dv] of [['ed-frl', -90], ['ed-frr', 90]]) props.querySelector('#' + id)?.addEventListener('click', () => { begin(); setRot((it.rot ?? 0) + dv); commit(); });
       props.querySelectorAll('[data-fnudge]').forEach(b => b.addEventListener('click', () => {
