@@ -407,6 +407,13 @@ export function buildFurniture(it, M) {
         rbox(g, c1, 0.86, zin - zf, M.matte(col), hw - c1 / 2, 0.43, (zin + zf) / 2, true);
         rbox(g, c1, 0.04, zin - topZ1, M.counter, hw - c1 / 2, 0.88, (zin + topZ1) / 2);
       }
+      // it.shelfStart — то же у другого конца (cut[0], например у столба): отступ от края до препятствия;
+      // полка доходит до торца стойки, а торец под ней закрыт бортиком
+      const s0 = raised && it.shelfStart != null && c0 > 0 ? hd - it.shelfStart : null;
+      if (s0 !== null) {
+        rbox(g, c0, 0.86, s0 - zf, M.matte(col), -hw + c0 / 2, 0.43, (s0 + zf) / 2, true);
+        rbox(g, c0, 0.04, s0 - topZ1, M.counter, -hw + c0 / 2, 0.88, (s0 + topZ1) / 2);
+      }
       // вытяжка: по умолчанию встроенная выдвижная за варочной панелью; 'island' — под потолком; false — нет
       const hood = hx === null ? null : it.hood === false ? null : it.hood ?? 'downdraft';
       if (hx !== null) {
@@ -425,7 +432,12 @@ export function buildFurniture(it, M) {
         const topMat = style === 'waterfall' ? wood : M.counter;
         rbox(g, bw, 0.05, bd, topMat, bc, 1.085, bzc);
         if (shelf) rbox(g, c1 + shelf, 0.05, zin - bz0, topMat, bx1 + (c1 + shelf) / 2, 1.085, (bz0 + zin) / 2);
-        if (style === 'waterfall') for (const x of shelf ? [bx0 + 0.025] : [bx0 + 0.025, bx1 - 0.025]) rbox(g, 0.05, 1.06, bd, wood, x, 0.53, bzc, true);
+        if (s0 !== null) {
+          rbox(g, c0, 0.05, s0 - bz0, topMat, -hw + c0 / 2, 1.085, (bz0 + s0) / 2);
+          rbox(g, 0.02, 0.16, s0 - bz0, topMat, -hw + 0.01, 0.98, (bz0 + s0) / 2);
+        }
+        const ends = [s0 === null && bx0 + 0.025, !shelf && bx1 - 0.025].filter(x => x !== false);
+        if (style === 'waterfall') for (const x of ends) rbox(g, 0.05, 1.06, bd, wood, x, 0.53, bzc, true);
         else for (const x of [bx0 + 0.3, bx1 - 0.3]) rbox(g, 0.04, 0.2, bd - 0.14, M.black, x, 0.96, bzc + 0.05);
       } else {
         // деревянная доска над краем рабочей столешницы на чёрных стойках, у края — ножки до пола
