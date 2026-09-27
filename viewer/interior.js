@@ -182,14 +182,24 @@ function islandHood(g, M, x, z, ceil, w = 0.9, d = 0.5) {
 }
 
 // Встроенная выдвижная вытяжка (даунрафт): стальная панель поднимается из столешницы за варочной панелью.
+// Открытая — чуть ниже барной столешницы; в прогулке открывается и закрывается клавишей E (как двери).
 // Воздухозаборная щель и светодиодная подсветка — со стороны варочной панели (−z).
-function downdraft(g, M, x, z, w, { top = 0.9, h = 0.34 } = {}) {
+function downdraft(g, M, x, z, w, { top = 0.9, h = 0.165, open = true } = {}) {
   rbox(g, w + 0.03, 0.004, 0.07, M.steel, x, top + 0.002, z);
-  rbox(g, w, h, 0.045, M.steel, x, top + h / 2, z);
-  rbox(g, w + 0.004, 0.012, 0.05, M.black, x, top + h + 0.006, z);
-  rbox(g, w - 0.06, 0.045, 0.004, M.black, x, top + h - 0.075, z - 0.0235).castShadow = false;
-  for (const s of [-1, 1]) rbox(g, w * 0.38, 0.018, 0.004, M.led, x + s * w * 0.21, top + h - 0.03, z - 0.0235).castShadow = false;
-  rbox(g, 0.012, 0.16, 0.004, M.black, x + w / 2 - 0.03, top + h - 0.17, z - 0.0235).castShadow = false;
+  const holder = new THREE.Group();
+  holder.userData.dynamic = true;
+  holder.position.set(x, top, z);
+  const c = new THREE.Group();
+  holder.add(c);
+  rbox(c, w, h, 0.045, M.steel, 0, h / 2, 0);
+  rbox(c, w + 0.004, 0.012, 0.05, M.black, 0, h + 0.006, 0);
+  rbox(c, w - 0.06, 0.04, 0.004, M.black, 0, h - 0.08, -0.0235).castShadow = false;
+  for (const s of [-1, 1]) rbox(c, w * 0.38, 0.016, 0.004, M.led, s * w * 0.21, h - 0.03, -0.0235).castShadow = false;
+  rbox(c, 0.012, 0.07, 0.004, M.black, w / 2 - 0.03, h - 0.07, -0.0235).castShadow = false;
+  // закрытая уходит в столешницу, над ней остаётся только чёрная кромка
+  c.position.y = open ? 0 : -h;
+  holder.userData.door = { kind: 'lift', node: c, closed: -h, opened: 0, state: open ? 1 : 0, value: c.position.y, reach: 1.8 };
+  g.add(holder);
 }
 
 // Барный табурет: сиденье на 0,76 м, низкая спинка, подножка. Смотрит вдоль −z (к стойке) при face = 0.
@@ -369,7 +379,7 @@ export function buildFurniture(it, M) {
         const dd = hood === 'downdraft', pw = dd ? 0.78 : 0.58, pd = dd ? 0.44 : 0.5, pz = dd ? -hd + 0.25 : -hd + 0.3;
         rbox(g, pw + 0.012, 0.006, pd + 0.012, M.steel, hx, 0.903, pz);
         rbox(g, pw, 0.008, pd, M.black, hx, 0.906, pz);
-        if (dd) downdraft(g, M, hx, pz + pd / 2 + 0.035, pw + 0.02);
+        if (dd) downdraft(g, M, hx, pz + pd / 2 + 0.035, pw + 0.02, { open: it.hoodOpen !== false });
         else if (hood === 'island') islandHood(g, M, hx, pz, ceil);
       }
       if (sx !== null) sinkBowl(g, M, sx, -hd + 0.27, 0.5, 0.38, topZ1 - 0.05, -1);

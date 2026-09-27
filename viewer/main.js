@@ -1698,9 +1698,11 @@ function animateDoors(dt) {
     const d = h.userData.door;
     const target = d.state ? d.opened : d.closed;
     if (Math.abs(d.value - target) < 1e-4) continue;
-    const speed = d.kind === 'swing' ? 3.2 : 2.2;   // рад/с или м/с
+    const speed = d.kind === 'swing' ? 3.2 : d.kind === 'lift' ? 0.18 : 2.2;   // рад/с или м/с
     d.value += Math.sign(target - d.value) * Math.min(Math.abs(target - d.value), speed * dt);
-    if (d.kind === 'swing') d.node.rotation.y = d.value; else d.node.position.x = d.value;
+    if (d.kind === 'swing') d.node.rotation.y = d.value;
+    else if (d.kind === 'lift') d.node.position.y = d.value;   // выдвижная вытяжка
+    else d.node.position.x = d.value;
   }
 }
 // Ближайшая дверь перед камерой (до 2 м).
