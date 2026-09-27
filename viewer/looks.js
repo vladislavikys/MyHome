@@ -289,6 +289,7 @@ const KINDS = {
 const PHOTO = {
   plaster: [2.0], 'wood-dark': [0.6], floor: [1.2], herringbone: [3.4], deck: [1.8], stone: [2.0],
   soffit: [1.0], brick: [1.4, true], paving: [2.0], 'fence-wood': [1.0], soil: [1.3],
+  marble: [1.2],   // своя, не Poly Haven: белый мрамор с прожилками, сгенерирован (см. textures.json)
 };
 const loader = new THREE.TextureLoader();
 function photoSet(kind) {

@@ -88,5 +88,13 @@
   "authors": [
    "Rob Tuytel"
   ]
+ },
+ "marble": {
+  "asset": "generated",
+  "size": 1.2,
+  "color": false,
+  "authors": [
+   "процедурная, сгенерирована для проекта (шум + прожилки)"
+  ]
  }
 }

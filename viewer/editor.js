@@ -1389,7 +1389,13 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           ${slider('ed-w', 'Ширина, м', o.width, 0.4, o.type === 'window' ? 3 : 2.4)}
           ${slider('ed-h', 'Высота, м', o.height, 0.4, 2.7)}
           ${o.type === 'window' ? slider('ed-sill', 'Низ окна от пола, м', o.sill ?? 0, 0, 1.8) : ''}
-          ${o.type === 'door' ? `<button type="button" id="ed-slide">${o.slide ? 'Сделать распашной' : 'Сделать раздвижной'}</button><button type="button" id="ed-flip">${o.slide ? 'Полотно на другую сторону' : 'Открывать в другую сторону'}</button><button type="button" id="ed-hinge">${o.slide ? 'Сдвигать в другую сторону' : 'Петли с другого края'}</button>` : ''}
+          ${o.type === 'door' ? `<button type="button" id="ed-slide">${o.slide ? 'Сделать распашной' : 'Сделать раздвижной'}</button><button type="button" id="ed-flip">${o.slide ? 'Полотно на другую сторону' : 'Открывать в другую сторону'}</button><button type="button" id="ed-hinge">${o.slide ? 'Сдвигать в другую сторону' : 'Петли с другого края'}</button>
+          <label class="ed-field" for="ed-dhid"><span>Вид двери</span><select id="ed-dhid">
+            <option value="" ${o.hidden ? '' : 'selected'}>Обычная, с наличниками</option>
+            <option value="1" ${o.hidden ? 'selected' : ''}>Скрытая, в цвет стены</option></select></label>
+          <label class="ed-field" for="ed-dgrip"><span>Ручка</span><select id="ed-dgrip">
+            <option value="handle" ${(o.grip ?? (o.hidden ? 'hole' : 'handle')) === 'handle' ? 'selected' : ''}>Ручка</option>
+            <option value="hole" ${(o.grip ?? (o.hidden ? 'hole' : 'handle')) === 'hole' ? 'selected' : ''}>Отверстие для пальца</option></select></label>` : ''}
         </div>`;
     } else if (sel.kind === 'skylight') {
       const s = sel.win;
@@ -1536,6 +1542,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       });
       on('ed-h', el => { const v = parseFloat(el.value); if (v > 0.2) o.height = v; });
       on('ed-sill', el => { const v = parseFloat(el.value); if (v >= 0) o.sill = v; });
+      on('ed-dhid', el => { if (el.value) o.hidden = true; else delete o.hidden; propsKey = null; });
+      on('ed-dgrip', el => { if (el.value === (o.hidden ? 'hole' : 'handle')) delete o.grip; else o.grip = el.value; });
       on('ed-off', el => { const v = parseFloat(el.value); if (v >= 0) { o.offset = v; clamp(); } });
     } else if (sel?.kind === 'skylight') {
       const s = sel.win;

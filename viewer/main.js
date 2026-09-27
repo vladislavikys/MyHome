@@ -7,7 +7,7 @@ import { createEditor } from './editor.js';
 import { openStore, downloadJson, downloadFile, writeMirror } from './store.js';
 import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
-import { applyVariant, tourPoints } from './variants.js';
+import { applyVariant, captureVariant, tourPoints } from './variants.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -287,20 +287,25 @@ function box(w, h, d, mat) {
 
 // Оконный/дверной блок: белая рама + стекло или полотно.
 // room = { l, r } — сколько места для наличника слева/справа от проёма (до примыкающей стены), м
+// Скрытая дверь: тонкая графитовая рамка, полотно в цвет стены, отверстие-захват вместо ручки.
+const hiddenFrameMat = new THREE.MeshStandardMaterial({ color: '#4a4d51', roughness: 0.4, metalness: 0.6 });
+const holeMat = new THREE.MeshStandardMaterial({ color: '#0b0b0b', roughness: 0.9 });
 function openingFill(o, t, room = { l: 0.08, r: 0.08 }) {
   const g = new THREE.Group();
-  const f = 0.06;
-  const d = Math.min(t, 0.12);
   const glass = o.type !== 'door';
+  const hidden = !glass && !!o.hidden;
+  const f = hidden ? 0.015 : 0.06;
+  const d = Math.min(t, 0.12);
+  const fm = hidden ? hiddenFrameMat : frameMat;
   const add = (w, h, x, y, mat) => {
     const m = box(w, h, mat === glassMat ? 0.02 : d, mat);
     m.position.set(x, y, 0);
     g.add(m);
   };
-  add(o.width, f, 0, o.height - f / 2, frameMat);
-  if ((o.sill ?? 0) > 0) add(o.width, f, 0, f / 2, frameMat);
-  add(f, o.height, -o.width / 2 + f / 2, o.height / 2, frameMat);
-  add(f, o.height, o.width / 2 - f / 2, o.height / 2, frameMat);
+  add(o.width, f, 0, o.height - f / 2, fm);
+  if ((o.sill ?? 0) > 0) add(o.width, f, 0, f / 2, fm);
+  add(f, o.height, -o.width / 2 + f / 2, o.height / 2, fm);
+  add(f, o.height, o.width / 2 - f / 2, o.height / 2, fm);
   if (glass) {
     add(o.width - 2 * f, o.height - 2 * f, 0, o.height / 2, glassMat);
     // импосты через ~0.9 м
@@ -310,8 +315,11 @@ function openingFill(o, t, room = { l: 0.08, r: 0.08 }) {
     // Дверь: наличники + полотно на петлях (или раздвижное) — подвижная часть, её можно открыть/закрыть.
     const style = o.style ?? (t >= 0.25 ? 'metal' : 'interior');
     const M = doorMats(style);
-    const metal = style === 'metal';
-    for (const side of [-1, 1]) {
+    const metal = style === 'metal' && !hidden;
+    // o.hidden — скрытая дверь: без наличников, полотно заподлицо со стеной и в её цвет;
+    // o.grip — 'hole' (отверстие для пальца, по умолчанию у скрытой) или 'handle' (ручка)
+    const grip = o.grip ?? (hidden ? 'hole' : 'handle');
+    if (!hidden) for (const side of [-1, 1]) {
       const z = side * (d / 2 + 0.012);
       // наличник обрезается у примыкающей стены, чтобы не проходить сквозь неё в соседнюю комнату
       const cl = Math.max(0, Math.min(0.08, room.l)), cr = Math.max(0, Math.min(0.08, room.r));
@@ -329,10 +337,19 @@ function openingFill(o, t, room = { l: 0.08, r: 0.08 }) {
     }
     const leafW = o.width - 2 * f, leafH = o.height - f, th = metal ? 0.07 : 0.04;
     const sw = o.flip ? -1 : 1, sh = o.hingeEnd ? -1 : 1;
-    const leaf = box(leafW, leafH, th, M.leaf);
+    const leaf = box(leafW, leafH, th, hidden ? material(o.color ?? defaultsWallColor, null, { kind: 'plaster' }) : M.leaf);
     leaf.userData.collide = true;
     const hx = sh * (leafW - 0.08);
     const addHandle = (parent, zSide) => {
+      if (grip === 'hole') {
+        // сквозное отверстие-захват с тонким металлическим ободком
+        const zz = zSide * (th / 2 + 0.001);
+        const hole = mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.003, 24), holeMat);
+        hole.rotation.x = Math.PI / 2; hole.position.set(hx, 1.0, zz); parent.add(hole);
+        const rim = mesh(new THREE.TorusGeometry(0.021, 0.003, 8, 28), hiddenFrameMat);
+        rim.position.set(hx, 1.0, zz); parent.add(rim);
+        return;
+      }
       const zz = zSide * (th / 2 + 0.012);
       const ros = mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.012, 20), M.handle);
       ros.rotation.x = Math.PI / 2; ros.position.set(hx, 1.0, zz); parent.add(ros);
@@ -346,6 +363,7 @@ function openingFill(o, t, room = { l: 0.08, r: 0.08 }) {
       }
     };
     const content = new THREE.Group();
+    if (hidden) content.position.z = -(o.flip ? -1 : 1) * th / 2;   // лицо полотна — в плоскости стены
     leaf.position.set(sh * leafW / 2, leafH / 2, 0);
     content.add(leaf);
     addHandle(content, 1); addHandle(content, -1);
@@ -1876,6 +1894,7 @@ function renderVariants() {
     sel.id = 'variant-' + group;
     for (const [key, opt] of Object.entries(g.options ?? {})) sel.add(new Option(opt.name ?? key, key, false, key === g.active));
     sel.onchange = () => {
+      captureVariant(house, group);
       applyVariant(house, group, sel.value);
       build(house);
       editor.setHouse(house, { keepView: true });

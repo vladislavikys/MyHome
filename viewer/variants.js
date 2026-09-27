@@ -23,6 +23,32 @@ function setPath(obj, path, value) {
   }
 }
 
+function getPath(obj, path) {
+  let cur = obj;
+  for (const part of path.split('.')) {
+    if (cur == null) return undefined;
+    const hash = part.indexOf('#');
+    if (hash >= 0) {
+      const id = part.slice(hash + 1);
+      return (cur[part.slice(0, hash)] ?? []).find(x => x?.id === id) ?? null;
+    }
+    cur = cur[/^\d+$/.test(part) ? Number(part) : part];
+  }
+  return cur;
+}
+
+// Запомнить текущее состояние активного варианта (например, передвинутую мебель кухни),
+// чтобы при возврате к нему правки не пропали.
+export function captureVariant(house, group) {
+  const g = house.variants?.[group];
+  const opt = g?.options?.[g.active];
+  if (!opt?.set) return;
+  for (const path of Object.keys(opt.set)) {
+    const v = getPath(house, path);
+    if (v !== undefined) opt.set[path] = structuredClone(v);
+  }
+}
+
 export function applyVariant(house, group, key) {
   const g = house.variants?.[group];
   const opt = g?.options?.[key];
