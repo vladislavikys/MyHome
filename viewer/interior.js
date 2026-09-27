@@ -72,6 +72,7 @@ export function furnitureMats() {
     matte: c => get('m' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 })),
     gloss: c => get('g' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.12 })),
     led: get('led', () => new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#eef4ff', emissiveIntensity: 1.6 })),
+    iron: get('iron', () => new THREE.MeshStandardMaterial({ color: '#2a2c2e', roughness: 0.6, metalness: 0.5 })),
     steel: get('steel', () => new THREE.MeshStandardMaterial({ color: '#c3c7ca', roughness: 0.3, metalness: 0.85 })),
     chrome: get('chrome', () => new THREE.MeshStandardMaterial({ color: '#d9dde0', roughness: 0.12, metalness: 1 })),
     black: get('black', () => new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.35, metalness: 0.4 })),
@@ -202,6 +203,29 @@ function downdraft(g, M, x, z, w, { top = 0.9, h = 0.165, open = true } = {}) {
   g.add(holder);
 }
 
+// Брусок квадратного сечения s между точками a и b (стальная профильная труба).
+function barBetween(g, mat, a, b, s = 0.05) {
+  const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(s, A.distanceTo(B), s), mat);
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+  m.castShadow = m.receiveShadow = true;
+  g.add(m);
+}
+
+// Лофт-основание стола: рамка под столешницей, четыре наклонные ножки расходятся к полу, внизу — крестовина.
+// ax, az — полуразмеры рамки сверху, bx, bz — точки опоры на полу, y — низ столешницы.
+function loftBase(g, M, ax, az, bx, bz, y) {
+  const s = 0.05, top = [[-ax, -az], [ax, -az], [ax, az], [-ax, az]], foot = [[-bx, -bz], [bx, -bz], [bx, bz], [-bx, bz]];
+  for (let i = 0; i < 4; i++) {
+    const [p, q] = [top[i], top[(i + 1) % 4]];
+    barBetween(g, M.iron, [p[0], y - s / 2, p[1]], [q[0], y - s / 2, q[1]], s);
+    barBetween(g, M.iron, [top[i][0], y - s, top[i][1]], [foot[i][0], s / 2, foot[i][1]], s);
+  }
+  barBetween(g, M.iron, [foot[0][0], s / 2, foot[0][1]], [foot[2][0], s / 2, foot[2][1]], s);
+  barBetween(g, M.iron, [foot[1][0], s / 2, foot[1][1]], [foot[3][0], s / 2, foot[3][1]], s);
+}
+
 // Барный табурет: сиденье на 0,76 м, низкая спинка, подножка. Смотрит вдоль −z (к стойке) при face = 0.
 function barStool(g, M, c, x, z, face) {
   const s = new THREE.Group();
@@ -304,9 +328,12 @@ export function buildFurniture(it, M) {
       // столешница-овал (или круг) на центральной опоре, стулья по кругу; W×D — габарит со стульями
       const round = it.type === 'diningRound';
       const tw = round ? Math.min(W, D) - 0.95 : W - 1.05, td = round ? tw : D - 1.05;
-      const top = cyl(g, 0.5, 0.5, 0.04, M.wood(col), 0, 0.75, 0, 48);
+      // it.style = 'loft' — толстая деревянная столешница на стальном основании с наклонными ножками
+      const loft = it.style === 'loft';
+      const top = cyl(g, 0.5, 0.5, loft ? 0.05 : 0.04, M.wood(loft && col === T.fill ? '#7a5234' : col), 0, loft ? 0.745 : 0.75, 0, 64);
       top.scale.set(tw, 1, td);
-      for (const x of round ? [0] : [-tw * 0.28, tw * 0.28]) {
+      if (loft) loftBase(g, M, tw * (round ? 0.2 : 0.26), td * 0.2, tw * (round ? 0.3 : 0.36), td * 0.3, 0.72);
+      else for (const x of round ? [0] : [-tw * 0.28, tw * 0.28]) {
         cyl(g, 0.06, 0.08, 0.7, M.black, x, 0.37, 0, 16);
         cyl(g, 0.24, 0.26, 0.03, M.black, x, 0.015, 0, 24).castShadow = false;
       }
@@ -373,6 +400,13 @@ export function buildFurniture(it, M) {
       const raised = style !== 'ledge';
       const topZ1 = raised ? zf - 0.1 : zf;                  // рабочая столешница до панели
       counterTop(g, M, -hw, hw, -hd - 0.02, topZ1, holes);
+      // it.shelf — барная столешница продолжается за торец полкой над рабочей столешницей (до стены);
+      // в укороченном у стены конце (cut[1]) корпус и рабочая столешница доходят до стены (wallInset от края)
+      const shelf = raised && it.shelf ? it.shelf : 0, zin = hd - (it.wallInset ?? 0.1);
+      if (shelf && c1 > 0) {
+        rbox(g, c1, 0.86, zin - zf, M.matte(col), hw - c1 / 2, 0.43, (zin + zf) / 2, true);
+        rbox(g, c1, 0.04, zin - topZ1, M.counter, hw - c1 / 2, 0.88, (zin + topZ1) / 2);
+      }
       // вытяжка: по умолчанию встроенная выдвижная за варочной панелью; 'island' — под потолком; false — нет
       const hood = hx === null ? null : it.hood === false ? null : it.hood ?? 'downdraft';
       if (hx !== null) {
@@ -388,8 +422,10 @@ export function buildFurniture(it, M) {
         // панель от пола до барной столешницы — прячет рабочую зону от гостиной
         const pm = style === 'waterfall' ? wood : M.matte(it.panelColor ?? col);
         rbox(g, bw, 1.06, 0.1, pm, bc, 0.53, zf - 0.05, true);
-        rbox(g, bw, 0.05, bd, style === 'waterfall' ? wood : M.counter, bc, 1.085, bzc);
-        if (style === 'waterfall') for (const x of [bx0 + 0.025, bx1 - 0.025]) rbox(g, 0.05, 1.06, bd, wood, x, 0.53, bzc, true);
+        const topMat = style === 'waterfall' ? wood : M.counter;
+        rbox(g, bw, 0.05, bd, topMat, bc, 1.085, bzc);
+        if (shelf) rbox(g, c1 + shelf, 0.05, zin - bz0, topMat, bx1 + (c1 + shelf) / 2, 1.085, (bz0 + zin) / 2);
+        if (style === 'waterfall') for (const x of shelf ? [bx0 + 0.025] : [bx0 + 0.025, bx1 - 0.025]) rbox(g, 0.05, 1.06, bd, wood, x, 0.53, bzc, true);
         else for (const x of [bx0 + 0.3, bx1 - 0.3]) rbox(g, 0.04, 0.2, bd - 0.14, M.black, x, 0.96, bzc + 0.05);
       } else {
         // деревянная доска над краем рабочей столешницы на чёрных стойках, у края — ножки до пола
@@ -435,6 +471,16 @@ export function buildFurniture(it, M) {
       break;
     }
     case 'fridge': {
+      if (it.builtin) {
+        // встраиваемый двухдверный: колонна 2,2 м в цвет кухни, сверху холодильная камера, снизу морозильная, над ними антресоль
+        const fc = M.matte(it.color ?? '#e7e3dc'), gap = M.matte('#a9a49c');
+        rbox(g, W, 2.2, D, fc, 0, 1.1, 0, true);
+        for (const y of [0.82, 1.96]) rbox(g, W - 0.01, 0.005, 0.01, gap, 0, y, hd + 0.002);
+        rbox(g, 0.02, 0.36, 0.025, M.black, hw - 0.06, 1.45, hd + 0.015);
+        rbox(g, 0.02, 0.26, 0.025, M.black, hw - 0.06, 0.62, hd + 0.015);
+        rbox(g, 0.3, 0.015, 0.015, M.black, 0, 2.03, hd + 0.005);
+        break;
+      }
       rbox(g, W, 1.95, D, M.matte(col), 0, 0.975, 0, true);
       rbox(g, W - 0.02, 0.005, 0.01, M.matte('#9ea3a8'), 0, 1.25, hd + 0.003);
       rbox(g, 0.025, 0.4, 0.03, M.chrome, hw - 0.08, 1.5, hd + 0.02);

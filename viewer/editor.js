@@ -1439,6 +1439,10 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
           <label class="ed-field" for="ed-fc"><span>Цвет</span><input id="ed-fc" type="color" value="${it.color ?? T.fill}"></label>
           ${slider('ed-frot', 'Поворот, °', it.rot ?? 0, 0, 359, 1)}
           <div class="ed-btnrow"><button type="button" id="ed-frl">↺ 90°</button><button type="button" id="ed-frr">↻ 90°</button></div>
+          ${it.type === 'diningOval' || it.type === 'diningRound' ? `<label class="ed-field" for="ed-tstyle"><span>Исполнение</span><select id="ed-tstyle">
+            ${Object.entries({ classic: 'Классика (опоры-тумбы)', loft: 'Лофт (стальные ножки)' })
+              .map(([v, n]) => `<option value="${v}" ${(it.style ?? 'classic') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
+          ${it.type === 'fridge' ? `<label class="ed-check" for="ed-fbi"><input id="ed-fbi" type="checkbox" ${it.builtin ? 'checked' : ''}> Встраиваемый, двухдверный (в колонне)</label>` : ''}
           ${it.type === 'bar' ? `<label class="ed-field" for="ed-bstyle"><span>Исполнение</span><select id="ed-bstyle">
             ${Object.entries({ step: 'Ступенька (панель + столешница)', ledge: 'Деревянная доска на стойках', waterfall: 'Дерево «водопадом»' })
               .map(([v, n]) => `<option value="${v}" ${(it.style ?? 'step') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -1574,6 +1578,8 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-fw', el => { const v = parseFloat(el.value); if (v > 0.1) it.w = v; });
       on('ed-fd', el => { const v = parseFloat(el.value); if (v > 0.05) it.d = v; });
       on('ed-fc', el => { it.color = el.value; });
+      on('ed-fbi', el => { if (el.checked) it.builtin = true; else delete it.builtin; });
+      on('ed-tstyle', el => { if (el.value === 'classic') delete it.style; else it.style = el.value; });
       on('ed-bstyle', el => { it.style = el.value; });
       on('ed-bst', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 8) it.stools = v; });
       on('ed-bpd', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 6) it.pendants = v; });
