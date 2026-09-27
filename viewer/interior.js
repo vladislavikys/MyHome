@@ -71,6 +71,7 @@ export function furnitureMats() {
     wood: c => get('w' + c, () => pbr(c, 'wood-dark', { roughness: 0.55 })),
     matte: c => get('m' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 })),
     gloss: c => get('g' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.12 })),
+    led: get('led', () => new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#eef4ff', emissiveIntensity: 1.6 })),
     steel: get('steel', () => new THREE.MeshStandardMaterial({ color: '#c3c7ca', roughness: 0.3, metalness: 0.85 })),
     chrome: get('chrome', () => new THREE.MeshStandardMaterial({ color: '#d9dde0', roughness: 0.12, metalness: 1 })),
     black: get('black', () => new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.35, metalness: 0.4 })),
@@ -178,6 +179,17 @@ function islandHood(g, M, x, z, ceil, w = 0.9, d = 0.5) {
   g.add(fr);
   const yb = y0 + 0.27;
   rbox(g, 0.22 * w / d, ceil - yb, 0.22, M.steel, x, (ceil + yb) / 2, z);
+}
+
+// Встроенная выдвижная вытяжка (даунрафт): стальная панель поднимается из столешницы за варочной панелью.
+// Воздухозаборная щель и светодиодная подсветка — со стороны варочной панели (−z).
+function downdraft(g, M, x, z, w, { top = 0.9, h = 0.34 } = {}) {
+  rbox(g, w + 0.03, 0.004, 0.07, M.steel, x, top + 0.002, z);
+  rbox(g, w, h, 0.045, M.steel, x, top + h / 2, z);
+  rbox(g, w + 0.004, 0.012, 0.05, M.black, x, top + h + 0.006, z);
+  rbox(g, w - 0.06, 0.045, 0.004, M.black, x, top + h - 0.075, z - 0.0235).castShadow = false;
+  for (const s of [-1, 1]) rbox(g, w * 0.38, 0.018, 0.004, M.led, x + s * w * 0.21, top + h - 0.03, z - 0.0235).castShadow = false;
+  rbox(g, 0.012, 0.16, 0.004, M.black, x + w / 2 - 0.03, top + h - 0.17, z - 0.0235).castShadow = false;
 }
 
 // Барный табурет: сиденье на 0,76 м, низкая спинка, подножка. Смотрит вдоль −z (к стойке) при face = 0.
@@ -351,9 +363,14 @@ export function buildFurniture(it, M) {
       const raised = style !== 'ledge';
       const topZ1 = raised ? zf - 0.1 : zf;                  // рабочая столешница до панели
       counterTop(g, M, -hw, hw, -hd - 0.02, topZ1, holes);
+      // вытяжка: по умолчанию встроенная выдвижная за варочной панелью; 'island' — под потолком; false — нет
+      const hood = hx === null ? null : it.hood === false ? null : it.hood ?? 'downdraft';
       if (hx !== null) {
-        rbox(g, 0.58, 0.008, 0.5, M.black, hx, 0.904, -hd + 0.3);
-        if (it.hood !== false) islandHood(g, M, hx, -hd + 0.3, ceil);
+        const dd = hood === 'downdraft', pw = dd ? 0.78 : 0.58, pd = dd ? 0.44 : 0.5, pz = dd ? -hd + 0.25 : -hd + 0.3;
+        rbox(g, pw + 0.012, 0.006, pd + 0.012, M.steel, hx, 0.903, pz);
+        rbox(g, pw, 0.008, pd, M.black, hx, 0.906, pz);
+        if (dd) downdraft(g, M, hx, pz + pd / 2 + 0.035, pw + 0.02);
+        else if (hood === 'island') islandHood(g, M, hx, pz, ceil);
       }
       if (sx !== null) sinkBowl(g, M, sx, -hd + 0.27, 0.5, 0.38, topZ1 - 0.05, -1);
       const bz0 = raised ? zf - 0.18 : zf - 0.32, bd = hd - bz0, bzc = (bz0 + hd) / 2;
@@ -378,8 +395,8 @@ export function buildFurniture(it, M) {
       const ns = it.stools ?? Math.max(1, Math.floor(bw / 0.6));
       for (let i = 0; i < ns; i++) barStool(g, M, it.stoolColor ?? '#5b4a3e', bx0 + (bw * (i + 0.5)) / ns, hd - 0.02, 0);
       // подвесы над барной частью; если есть вытяжка — по обе стороны от неё
-      const np = it.pendants ?? 0, hood = hx !== null && it.hood !== false;
-      const spans = hood ? [[bx0, Math.max(bx0, hx - 0.5)], [Math.min(bx1, hx + 0.5), bx1]].filter(([a, b]) => b - a > 0.25) : [[bx0, bx1]];
+      const np = it.pendants ?? 0;
+      const spans = hood === 'island' ? [[bx0, Math.max(bx0, hx - 0.5)], [Math.min(bx1, hx + 0.5), bx1]].filter(([a, b]) => b - a > 0.25) : [[bx0, bx1]];
       const total = spans.reduce((t, [a, b]) => t + b - a, 0);
       const px = [];
       spans.forEach(([a, b], k) => {

@@ -1446,7 +1446,9 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
             ${num('ed-bpd', 'Подвесных светильников', it.pendants ?? 0, 1)}
             <label class="ed-field" for="ed-bbc"><span>Цвет дерева</span><input id="ed-bbc" type="color" value="${it.barColor ?? '#8a5a3a'}"></label>
             <label class="ed-check" for="ed-bhob"><input id="ed-bhob" type="checkbox" ${it.hob != null ? 'checked' : ''}> Варочная панель на стойке</label>
-            ${it.hob != null ? `<label class="ed-check" for="ed-bhood"><input id="ed-bhood" type="checkbox" ${it.hood !== false ? 'checked' : ''}> Вытяжка над ней</label>` : ''}
+            ${it.hob != null ? `<label class="ed-field" for="ed-bhood"><span>Вытяжка</span><select id="ed-bhood">
+              ${Object.entries({ downdraft: 'Встроенная, выдвижная', island: 'Островная под потолком', none: 'Нет' })
+                .map(([v, n]) => `<option value="${v}" ${(it.hood === false ? 'none' : it.hood ?? 'downdraft') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
             <label class="ed-check" for="ed-bsink"><input id="ed-bsink" type="checkbox" ${it.sink != null ? 'checked' : ''}> Мойка на стойке</label>` : ''}
           <div class="ed-move"><span>Сдвинуть:</span>
             <button type="button" data-fnudge="-1,0" aria-label="Влево">←</button><button type="button" data-fnudge="0,-1" aria-label="Вверх">↑</button>
@@ -1577,7 +1579,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
       on('ed-bpd', el => { const v = Math.round(parseFloat(el.value)); if (v >= 0 && v <= 6) it.pendants = v; });
       on('ed-bbc', el => { it.barColor = el.value; });
       on('ed-bhob', el => { if (el.checked) it.hob = it.sink != null ? 0.3 : 0.5; else delete it.hob; propsKey = null; });
-      on('ed-bhood', el => { if (el.checked) delete it.hood; else it.hood = false; });
+      on('ed-bhood', el => { if (el.value === 'downdraft') delete it.hood; else it.hood = el.value === 'none' ? false : el.value; });
       on('ed-bsink', el => { if (el.checked) it.sink = it.hob != null ? 0.75 : 0.5; else delete it.sink; });
       on('ed-frot', el => setRot(parseFloat(el.value) || 0));
       for (const [id, dv] of [['ed-frl', -90], ['ed-frr', 90]]) props.querySelector('#' + id)?.addEventListener('click', () => { begin(); setRot((it.rot ?? 0) + dv); commit(); });
