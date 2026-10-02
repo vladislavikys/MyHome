@@ -1,0 +1,10 @@
+// Cloudflare Workers: просмотрщик дома как статический сайт (папка viewer).
+// Подключается в панели Cloudflare: Workers & Pages → Create → Import a repository;
+// после этого каждый push в ветку обновляет сайт.
+{
+  "name": "myhome",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./viewer"
+  }
+}
