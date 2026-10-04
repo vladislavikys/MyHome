@@ -1716,9 +1716,10 @@ function animateDoors(dt) {
     const d = h.userData.door;
     const target = d.state ? d.opened : d.closed;
     if (Math.abs(d.value - target) < 1e-4) continue;
-    const speed = d.kind === 'swing' ? 3.2 : d.kind === 'lift' ? 0.18 : 2.2;   // рад/с или м/с
+    const speed = d.kind === 'swing' || d.kind === 'tilt' ? 3.2 : d.kind === 'lift' ? 0.18 : 2.2;   // рад/с или м/с
     d.value += Math.sign(target - d.value) * Math.min(Math.abs(target - d.value), speed * dt);
     if (d.kind === 'swing') d.node.rotation.y = d.value;
+    else if (d.kind === 'tilt') d.node.rotation.x = d.value;   // откидная дверца духовки
     else if (d.kind === 'lift') d.node.position.y = d.value;   // выдвижная вытяжка
     else d.node.position.x = d.value;
   }
@@ -1730,9 +1731,22 @@ function toggleNearestDoor() {
   // выбираем дверь, на которую смотрим: важнее направление взгляда, чем расстояние
   let best = null, bestScore = -Infinity;
   const p = new THREE.Vector3();
+  const fwd3 = fwd.clone();
   fwd.y = 0; fwd.normalize();
   for (const h of doors) {
     if (!h.parent?.visible) continue;
+    const aim = h.userData.door.aim;
+    if (aim) {
+      // дверцы техники стоят одна над другой — выбираем по направлению взгляда в пространстве
+      h.localToWorld(p.set(...aim));
+      const d = p.distanceTo(cam);
+      if (d > (h.userData.door.reach ?? 1.8)) continue;
+      const dot = p.clone().sub(cam).normalize().dot(fwd3);
+      if (dot < 0.8) continue;
+      const score = dot * 1.5 - d * 0.25;
+      if (score > bestScore) { best = h; bestScore = score; }
+      continue;
+    }
     h.getWorldPosition(p);
     p.y = cam.y;
     const d = p.distanceTo(cam);

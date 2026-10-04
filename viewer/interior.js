@@ -74,6 +74,8 @@ export function furnitureMats() {
     wood: c => get('w' + c, () => pbr(c, 'wood-dark', { roughness: 0.55 })),
     matte: c => get('m' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 })),
     gloss: c => get('g' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.12 })),
+    enamel: get('enamel', () => new THREE.MeshStandardMaterial({ color: '#1e1f21', roughness: 0.5 })),
+    fridgeIn: get('fridgeIn', () => new THREE.MeshStandardMaterial({ color: '#eef1f2', roughness: 0.35 })),
     marble: get('marble', () => pbr('#f6f4f0', 'marble')),
     quartz: c => get('q' + c, () => new THREE.MeshStandardMaterial({ color: c, roughness: 0.14 })),
     led: get('led', () => new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#eef4ff', emissiveIntensity: 1.6 })),
@@ -289,6 +291,40 @@ function dishes(g, M, x0, x1, y, zc, seed = 1) {
       x += 0.24;
     }
   }
+}
+
+// Корпус колонны с проёмами под технику: боковины во всю высоту и перемычки между проёмами (holes — [{ y0, h }]).
+function shell(g, mat, W, H, D, holes, s = 0.04) {
+  const iw = W - 2 * s;
+  for (const x of [-1, 1]) rbox(g, s, H, D, mat, x * (W / 2 - s / 2), H / 2, 0, true);
+  let y = 0;
+  for (const h of [...holes].sort((a, b) => a.y0 - b.y0)) {
+    if (h.y0 > y + 0.001) rbox(g, iw, h.y0 - y, D, mat, 0, (y + h.y0) / 2, 0, true);
+    y = h.y0 + h.h;
+  }
+  if (H > y + 0.001) rbox(g, iw, H - y, D, mat, 0, (y + H) / 2, 0, true);
+}
+
+// Камера техники в проёме: задняя стенка, бока, верх и низ; zf — лицевая плоскость, d — глубина.
+function cavity(g, mat, w, h, d, y0, zf) {
+  const t = 0.006, zc = zf - d / 2;
+  rbox(g, w, h, t, mat, 0, y0 + h / 2, zf - d + t / 2);
+  for (const sx of [-1, 1]) rbox(g, t, h, d, mat, sx * (w / 2 - t / 2), y0 + h / 2, zc);
+  for (const y of [y0 + t / 2, y0 + h - t / 2]) rbox(g, w, t, d, mat, 0, y, zc);
+}
+
+// Подвижная дверца техники (открывается клавишей E в прогулке, как двери дома).
+// at — точка петли; axis 'y' — дверца на боковых петлях, 'x' — откидная вниз; opened — угол открытия;
+// aim — центр дверцы относительно петли: по нему ищется дверца, на которую смотрят.
+function applianceDoor(g, { at, axis = 'y', opened, aim, build, reach = 1.8 }) {
+  const holder = new THREE.Group();
+  holder.userData.dynamic = true;
+  holder.position.set(...at);
+  const c = new THREE.Group();
+  holder.add(c);
+  build(c);
+  holder.userData.door = { kind: axis === 'x' ? 'tilt' : 'swing', node: c, closed: 0, opened, state: 0, value: 0, reach, aim };
+  g.add(holder);
 }
 
 // Барный табурет: сиденье на 0,76 м, низкая спинка, подножка. Смотрит вдоль −z (к стойке) при face = 0.
@@ -601,24 +637,47 @@ export function buildFurniture(it, M) {
       break;
     }
     case 'oventower': {
-      // колонна: духовка на уровне глаз, над ней микроволновка
-      rbox(g, W, 2.2, D, M.matte(col), 0, 1.1, 0, true);
-      rbox(g, W - 0.08, 0.58, 0.02, M.black, 0, 1.05, hd + 0.005);
-      rbox(g, W - 0.16, 0.34, 0.021, M.glass, 0, 1.06, hd + 0.012);
-      rbox(g, W - 0.08, 0.38, 0.02, M.black, 0, 1.6, hd + 0.005);
-      rbox(g, W - 0.12, 0.02, 0.03, M.chrome, 0, 1.3, hd + 0.02);
+      // колонна: духовка (дверца откидывается вниз), над ней микроволновка (дверца на петлях слева);
+      // дверцы открываются клавишей E в прогулке
+      const iw = W - 0.08, ov = { y0: 0.56, h: 0.58 }, mw = { y0: 1.21, h: 0.38 };
+      shell(g, M.matte(col), W, 2.2, D, [ov, mw]);
+      cavity(g, M.enamel, iw, ov.h, D - 0.06, ov.y0, hd);
+      for (const y of [ov.y0 + 0.17, ov.y0 + 0.33]) rbox(g, iw - 0.03, 0.006, D - 0.12, M.chrome, 0, y, hd - D / 2 + 0.03).castShadow = false;
+      cavity(g, M.enamel, iw, mw.h, 0.4, mw.y0, hd);
+      cyl(g, 0.13, 0.13, 0.006, M.glass, 0, mw.y0 + 0.015, hd - 0.2, 32);
+      applianceDoor(g, { at: [0, ov.y0, hd], axis: 'x', opened: 1.45, aim: [0, ov.h / 2, 0.02], build: c => {
+        rbox(c, iw, ov.h, 0.03, M.black, 0, ov.h / 2, 0.015);
+        rbox(c, iw - 0.08, 0.34, 0.031, M.glass, 0, ov.h / 2 - 0.03, 0.016);
+        rbox(c, iw - 0.06, 0.02, 0.02, M.chrome, 0, ov.h - 0.06, 0.06);
+        for (const sx of [-1, 1]) rbox(c, 0.015, 0.015, 0.03, M.chrome, sx * (iw / 2 - 0.05), ov.h - 0.06, 0.04);
+      } });
+      const mdw = iw * 0.78;
+      applianceDoor(g, { at: [-iw / 2, mw.y0, hd], opened: -1.65, aim: [mdw / 2, mw.h / 2, 0.02], build: c => {
+        rbox(c, mdw, mw.h, 0.03, M.black, mdw / 2, mw.h / 2, 0.015);
+        rbox(c, mdw - 0.08, mw.h - 0.1, 0.031, M.glass, mdw / 2, mw.h / 2, 0.016);
+      } });
+      rbox(g, iw - mdw, mw.h, 0.03, M.black, iw / 2 - (iw - mdw) / 2, mw.y0 + mw.h / 2, hd + 0.015);
       break;
     }
     case 'fridge': {
       if (it.builtin) {
         // встраиваемый двухдверный: колонна 2,2 м в цвет кухни, сверху холодильная камера, снизу морозильная, над ними антресоль
-        const fc = M.matte(it.color ?? '#e7e3dc'), gap = M.matte('#a9a49c');
-        rbox(g, W, 2.2, D, fc, 0, 1.1, 0, true);
-        for (const y of [0.82, 1.96]) rbox(g, W - 0.01, 0.005, 0.01, gap, 0, y, hd + 0.002);
-        if (!it.handleless) {
-          rbox(g, 0.02, 0.36, 0.025, M.black, hw - 0.06, 1.45, hd + 0.015);
-          rbox(g, 0.02, 0.26, 0.025, M.black, hw - 0.06, 0.62, hd + 0.015);
-          rbox(g, 0.3, 0.015, 0.015, M.black, 0, 2.03, hd + 0.005);
+        // двери на петлях слева открываются клавишей E в прогулке: внутри полки, на дверце — балконы
+        const fc = M.matte(it.color ?? '#e7e3dc'), gap = M.matte('#a9a49c'), iw = W - 0.08;
+        const fr = { y0: 0.84, h: 1.1 }, fz = { y0: 0.04, h: 0.76 };
+        shell(g, fc, W, 2.2, D, [fz, fr]);
+        cavity(g, M.fridgeIn, iw, fr.h, D - 0.06, fr.y0, hd);
+        for (const y of [1.14, 1.42, 1.68]) rbox(g, iw - 0.02, 0.008, D - 0.12, M.glass, 0, y, hd - D / 2 + 0.03);
+        cavity(g, M.fridgeIn, iw, fz.h, D - 0.06, fz.y0, hd);
+        for (const y of [0.16, 0.42, 0.66]) rbox(g, iw - 0.04, 0.2, D - 0.14, M.gloss('#dfe6ea'), 0, y, hd - D / 2 + 0.04);
+        rbox(g, W - 0.01, 0.005, 0.01, gap, 0, 1.96, hd + 0.002);
+        if (!it.handleless) rbox(g, 0.3, 0.015, 0.015, M.black, 0, 2.03, hd + 0.005);
+        for (const [o, hy, hl] of [[fr, 0.61, 0.36], [fz, 0.58, 0.26]]) {
+          applianceDoor(g, { at: [-iw / 2, o.y0, hd], opened: -1.75, aim: [iw / 2, o.h / 2, 0.03], build: c => {
+            rbox(c, iw, o.h - 0.006, 0.03, fc, iw / 2, o.h / 2, 0.015);
+            if (!it.handleless) rbox(c, 0.02, hl, 0.025, M.black, iw - 0.05, hy, 0.045);
+            for (const y of o === fr ? [0.25, 0.6, 0.9] : [0.3]) rbox(c, iw - 0.1, 0.07, 0.07, M.fridgeIn, iw / 2, y, -0.035);
+          } });
         }
         break;
       }

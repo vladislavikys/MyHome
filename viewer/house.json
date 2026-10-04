@@ -1,6 +1,6 @@
 {
   "name": "Жилой дом 15,6 × 9,1 м (мансардный)",
-  "revision": 35,
+  "revision": 36,
   "source": "Проект 23/21-АС: планы М1:100, фасады, разрез 1-1, план кровли",
   "units": "m",
   "note": "x — вдоль осей 1→5 (ось 1 = 0), y — от оси В (0) к осям Б (8.1) и А (9.1). Оси — по наружным граням стен.",
@@ -45,7 +45,7 @@
         { "id": "i-pantryW", "from": [8.55, 0.3], "to": [8.55, 3.8], "thickness": 0.1, "height": 3 },
         { "id": "i-pantryS", "from": [8.55, 3.8], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
         { "id": "i-stairE", "from": [11.45, 0.3], "to": [11.45, 3.7], "thickness": 0.1, "height": 3 },
-        { "id": "i-bedS", "from": [11.45, 3.68], "to": [15.3, 3.68], "thickness": 0.15, "height": 2.7 },
+        { "id": "i-bedS", "from": [11.45, 3.68], "to": [15.3, 3.68], "thickness": 0.1, "height": 2.7 },
         { "id": "i-hallS", "from": [9.85, 5.4], "to": [15.3, 5.4], "thickness": 0.1, "height": 2.7 },
         { "id": "i-bath", "from": [13.2, 3.75], "to": [13.2, 7.8], "thickness": 0.1, "height": 2.7 },
         { "id": "i-vestW", "from": [11.3, 5.4], "to": [11.3, 7.8], "thickness": 0.1, "height": 2.7 },
@@ -76,7 +76,7 @@
         { "id": "v-kitchenW", "from": [7.25, 7.95], "to": [7.25, 5.4], "thickness": 0.05, "virtual": true },
         { "id": "v-kitchenN", "from": [7.25, 5.4], "to": [9.95, 5.4], "thickness": 0.05, "virtual": true },
         { "id": "v-hallW", "from": [9.95, 3.8], "to": [9.95, 5.4], "thickness": 0.05, "virtual": true },
-        { "id": "v-stairS", "from": [9.95, 3.8], "to": [11.3, 3.8], "thickness": 0.05, "virtual": true },
+        { "id": "v-stairS", "from": [9.95, 3.8], "to": [11.45, 3.8], "thickness": 0.05, "virtual": true },
         { "id": "v-stairMid", "from": [9.95, 0.3], "to": [9.95, 3.8], "thickness": 0.05, "virtual": true }
       ],
       "openings": [
@@ -603,7 +603,7 @@
               "profile": [[0, 0], [3.5, 0], [3.5, 3], [3.45, 3.02], [1.2, 1.608], [1.2, 1.35], [0, 1.35]]
             },
             "floors.0.walls#i-pantryS": { "id": "i-pantryS", "from": [8.55, 3.8], "to": [9.95, 3.8], "thickness": 0.1, "height": 2.7 },
-            "floors.0.walls#v-stairS": { "id": "v-stairS", "from": [9.95, 3.8], "to": [11.3, 3.8], "thickness": 0.05, "virtual": true },
+            "floors.0.walls#v-stairS": { "id": "v-stairS", "from": [9.95, 3.8], "to": [11.45, 3.8], "thickness": 0.05, "virtual": true },
             "floors.0.rooms#r-stair": {
               "name": "6 Лестница",
               "color": "#b9a894",
