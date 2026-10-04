@@ -10,6 +10,11 @@
 
 ## Как посмотреть
 
+Онлайн: https://myhome.zaryavlad1998.workers.dev — Cloudflare Workers собирает сайт из папки `viewer`
+(настройки в `wrangler.jsonc`) при каждом push в ветку `claude/stoic-cerf-1thndl`.
+
+Локально:
+
 ```bash
 cd viewer
 python3 -m http.server 8000
