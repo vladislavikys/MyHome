@@ -12,6 +12,7 @@
 
 Онлайн: https://myhome.zaryavlad1998.workers.dev — Cloudflare Workers собирает сайт из папки `viewer`
 (настройки в `wrangler.jsonc`) при каждом push в ветку `claude/stoic-cerf-1thndl`.
+Правки, сделанные на этом сайте в редакторе, сохраняются только в браузере того, кто их сделал.
 
 Локально:
 
