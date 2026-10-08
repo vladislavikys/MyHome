@@ -1819,7 +1819,10 @@ function collectNight() {
 }
 function applyNight() {
   for (const m of nightMats) { const [d, n] = m.userData.night; m.emissiveIntensity = d + (n - d) * nightK; }
-  for (const l of nightLights) l.intensity = l.userData.night * nightK;
+  // днём источники не просто гасим, а убираем из сцены: каждый видимый точечный свет обсчитывается в шейдере
+  // всех материалов, даже с нулевой яркостью (переключение пересобирает шейдеры — раз в сумерки, не каждый кадр)
+  const on = nightK > 0.02;
+  for (const l of nightLights) { l.intensity = l.userData.night * nightK; l.visible = on; }
 }
 function animateFlicker(t) {
   for (const o of flickers) {
