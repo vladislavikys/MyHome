@@ -336,9 +336,11 @@ export function buildItem(it, M, seed = 1) {
       const post = mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.9 * s, 10), M.metal);
       post.position.y = 0.45 * s;
       g.add(post);
-      const head = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 12), M.glow, false);
+      // колпак светится сильнее к ночи; свой точечный свет (optional — на телефоне выключается)
+      const head = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 12), M.bulb, false);
       head.position.y = 0.9 * s + 0.09;
       g.add(head);
+      if (it.light !== false) nightLight(g, '#ffc77a', 2.5, 0, 0.9 * s + 0.05, 0, 7).children[0].userData.optional = true;
       const cap = mesh(new THREE.ConeGeometry(0.15, 0.1, 12), M.metal);
       cap.position.y = 0.9 * s + 0.23;
       g.add(cap);

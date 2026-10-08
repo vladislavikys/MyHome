@@ -820,7 +820,16 @@
     "streetView": { "eye": [-3, 31.8], "look": [6.5, 13] },
     "items": [
       { "type": "firepit", "at": [10.2, 5.8], "chairs": 5, "posts": 5 },
-      { "type": "screen", "at": [9.1, 9.59], "rot": 180, "width": 3, "bottom": 1.2 }
+      { "type": "screen", "at": [9.1, 9.59], "rot": 180, "width": 3, "bottom": 1.2 },
+      { "type": "lamp", "at": [-1.2, 20.75] },
+      { "type": "lamp", "at": [3, 20.75] },
+      { "type": "lamp", "at": [7, 20.75] },
+      { "type": "lamp", "at": [13.4, 20.75] },
+      { "type": "lamp", "at": [17.0, 18.8] },
+      { "type": "lamp", "at": [9.75, 18.75] },
+      { "type": "lamp", "at": [11.45, 18.75] },
+      { "type": "lamp", "at": [17.8, 4.85] },
+      { "type": "lamp", "at": [23.15, 11.5] }
     ]
   }
 }

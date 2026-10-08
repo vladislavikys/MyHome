@@ -97,6 +97,41 @@ const sunState = (() => {
   try { const s = JSON.parse(localStorage.getItem('myhome.sun') ?? 'null'); if (s?.date) return s; } catch { /* нет хранилища */ }
   return { date: today, hours: 13 };
 })();
+// Ночное небо: звёзды (точки на верхней полусфере) и луна (диск напротив солнца); следуют за камерой.
+const skyNight = new THREE.Group();
+skyNight.renderOrder = -1;
+scene.add(skyNight);
+const starMat = new THREE.PointsMaterial({ color: '#ffffff', size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false });
+{
+  const n = 1800, pos = new Float32Array(n * 3);
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < n; i++) {
+    const y = 0.04 + 0.96 * Math.pow(rnd(), 0.8), a = rnd() * Math.PI * 2, r = Math.sqrt(1 - y * y);
+    pos.set([Math.cos(a) * r * 300, y * 300, Math.sin(a) * r * 300], i * 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  skyNight.add(new THREE.Points(geo, starMat));
+}
+const moonMat = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  const gr = x.createRadialGradient(56, 54, 6, 64, 64, 60);
+  gr.addColorStop(0, '#fffdf2'); gr.addColorStop(0.8, '#e9e4d2'); gr.addColorStop(1, '#cfc8b4');
+  x.fillStyle = gr; x.beginPath(); x.arc(64, 64, 60, 0, Math.PI * 2); x.fill();
+  x.fillStyle = 'rgba(150,140,120,0.35)';
+  for (const [cx, cy, r] of [[48, 50, 12], [80, 72, 9], [62, 88, 7], [86, 44, 6]]) { x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.SpriteMaterial({ map: t, transparent: true, opacity: 0, depthWrite: false, fog: false });
+})();
+const moon = new THREE.Sprite(moonMat);
+moon.scale.setScalar(16);
+skyNight.add(moon);
+skyNight.visible = false;
+
 let sunPlaying = false, sunQueued = false;
 const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
 let nightK = 0, nightMats = new Set(), nightLights = [], flickers = [];   // вечерний свет участка, см. collectNight
@@ -141,6 +176,11 @@ function applySun() {
   sun.intensity = w * 3.3 * (0.35 + 0.65 * smooth(0, 15, el)) + (1 - w) * 0.55;
   nightK = 1 - smooth(-4, 8, el);
   applyNight();
+  const starK = 1 - smooth(-10, 0, el);        // звёзды — только в настоящей темноте, луна чуть раньше
+  starMat.opacity = starK;
+  moonMat.opacity = 1 - smooth(-6, 2, el);
+  moon.position.copy(dirOf(35, az + 180)).multiplyScalar(280);
+  skyNight.visible = moonMat.opacity > 0.01;
   sun.color.set(w > 0.05 ? '#ff9a55' : '#8fa6d8');
   if (w > 0.05) sun.color.lerp(new THREE.Color('#fff1dc'), smooth(2, 25, el));
   const hh = sunState.hours;
@@ -219,7 +259,9 @@ function pbr(color, kind, extra = {}) {
 const glassMat = new THREE.MeshStandardMaterial({
   color: '#c8dbe6', transparent: true, opacity: 0.18, roughness: 0.03, metalness: 0.1,
   envMapIntensity: 2.2, side: THREE.DoubleSide, depthWrite: false,
+  emissive: '#ffc982', emissiveIntensity: 0,
 });
+glassMat.userData.night = [0, 2.4];   // ночью окна светятся тёплым светом изнутри (см. applyNight)
 const frameMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.55 });
 let soffitColor = null; // обшивка свесов снизу
 // Межкомнатные — шпон ореха с фрезеровкой; входная — крашеный металл с филёнками.
@@ -959,6 +1001,38 @@ function railing(r, elevation) {
   return g;
 }
 
+// Подсветка свеса: тёплая LED-лента под нижней кромкой ската, отступ 20 см от края, и редкие светильники вниз
+// на стену (раз в ~5 м; на телефоне выключены). Днём не светится — включается вместе с вечерним светом.
+const eaveMat = new THREE.MeshStandardMaterial({ color: '#fff1d6', emissive: '#ffc775', emissiveIntensity: 0, roughness: 0.4 });
+eaveMat.userData.night = [0, 3];
+function eaveLight(g, pts) {
+  const order = [0, 1, 2, 3].sort((i, j) => pts[i].y - pts[j].y);
+  const a = pts[order[0]], b = pts[order[1]];
+  const u = b.clone().sub(a), len = u.length();
+  u.divideScalar(len);
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const c = pts.reduce((s, v) => s.add(v), new THREE.Vector3()).multiplyScalar(0.25);
+  const inward = c.sub(mid);
+  inward.addScaledVector(u, -inward.dot(u)).normalize();
+  const at = mid.clone().addScaledVector(inward, 0.2);
+  at.y -= 0.03;
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.015, 0.04), eaveMat);
+  strip.position.copy(at);
+  strip.rotation.y = -Math.atan2(u.z, u.x);
+  g.add(strip);
+  const n = Math.max(1, Math.round(len / 5));
+  for (let i = 0; i < n; i++) {
+    const holder = new THREE.Group();
+    holder.userData.dynamic = true;
+    const l = new THREE.PointLight('#ffc775', 0, 5, 2);
+    l.userData.night = 1.6;
+    l.userData.optional = true;
+    holder.position.copy(at).addScaledVector(u, (i + 0.5 - n / 2) * (len / n)).add(new THREE.Vector3(0, -0.15, 0));
+    holder.add(l);
+    g.add(holder);
+  }
+}
+
 // Скат крыши: 4 угла нижней поверхности [x, y, h] + толщина вверх по нормали.
 function roofPanel(p) {
   const pts = p.corners.map(([x, y, h]) => new THREE.Vector3(x, h, y));
@@ -991,6 +1065,8 @@ function roofPanel(p) {
     sm.userData.uvFn = uvFn;
     g.add(sm);
   }
+
+  if (!isGlass && p.eaveLight !== false) eaveLight(g, pts);
 
   // Мансардные окна лежат в плоскости ската чуть выше покрытия.
   const heightAt = (x, y) => -(plane.normal.x * x + plane.normal.z * y + plane.constant) / plane.normal.y;
@@ -1647,12 +1723,15 @@ function fence(boundary, gates, height = 2.0) {
   return g;
 }
 
-// Вечерний свет участка: гирлянды, костёр, экран. Материалы с userData.night = [день, ночь] — яркость свечения,
+// Вечерний свет: гирлянды, костёр, экран, фонари, окна, свесы. Материалы с userData.night = [день, ночь] — яркость свечения,
 // точечные лампы с userData.night — мощность ночью (днём выключены). Огонь мерцает (userData.flicker).
 function collectNight() {
   nightMats = new Set(); nightLights = []; flickers = [];
-  siteGroup.traverse(o => {
-    if (o.isLight && o.userData.night) nightLights.push(o);
+  scene.traverse(o => {
+    if (o.isLight && o.userData.night) {
+      if (coarse && o.userData.optional) o.visible = false;   // телефон: меньше точечных источников
+      else nightLights.push(o);
+    }
     if (o.userData.flicker) flickers.push(o);
     const m = o.material;
     if (m?.userData?.night) nightMats.add(m);
@@ -1803,6 +1882,7 @@ renderer.setAnimationLoop(() => {
   grassUniforms.uTime.value = clock.elapsedTime;
   animateDoors(dt);
   animateFlicker(clock.elapsedTime);
+  if (skyNight.visible) skyNight.position.copy(camera.position);
   if (photo.active) { photo.update(); return; }
   if (tour.active) tour.update();
   else if (walk.active) walk.update(dt);
