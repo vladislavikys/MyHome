@@ -241,6 +241,18 @@ const KINDS = {
       return [gap ? 0.55 : 0.85 + 0.15 * grain, gap ? 0 : 0.7];
     }; })(),
   },
+  plywood: {  // берёзовая фанера: листы 1,2 × 2,4 м со сдвигом через ряд, тёмный шов 4 мм, волнистый рисунок шпона
+    tile: 2.4, mat: { roughness: 0.62 }, normalStrength: 1.6,
+    fn: (() => { const ns = N(161); const r = rng(19); const tones = Array.from({ length: 8 }, () => 0.9 + r() * 0.1); return (u, v) => {
+      const col = Math.floor(u * 2), fu = u * 2 - col;
+      const vv = (v + col * 0.5) % 1, row = Math.floor(vv), fv = vv;
+      const seam = fu < 0.0035 || fv < 0.0018;
+      const wave = fbm(ns, u * 2 + col * 3.1, v * 9);
+      const figure = 0.5 + 0.5 * Math.sin((u * 14 + wave * 3.2) * Math.PI);
+      const a = tones[(col * 3 + row) % 8] * (0.9 + 0.06 * figure + 0.05 * wave);
+      return [seam ? [0.22, 0.2, 0.18] : [a, a, a], seam ? 0 : 0.6 + 0.2 * figure];
+    }; })(),
+  },
   brick: {  // кирпич, ложковая перевязка
     tile: 1.0, mat: { roughness: 0.85 }, normalStrength: 6,
     fn: (() => { const ns = N(101); const r = rng(7); const tones = Array.from({ length: 256 }, () => 0.72 + r() * 0.28); return (u, v) => {

@@ -234,11 +234,24 @@
         { "name": "1 Холл", "color": "#cfc6b6", "at": [9.6, 4.7] },
         { "name": "2 Жилая комната", "color": "#d9c9a8", "at": [13.4, 2.8] },
         { "name": "3 Гардероб", "color": "#c9c0ae", "at": [13.4, 6.7] },
-        { "name": "4 Санузел", "color": "#b7d3de", "at": [9.3, 7.2] },
+        { "name": "4 Санузел", "color": "#8f8b85", "at": [9.3, 6.2], "texture": "plaster", "wallFinish": "paint", "wallColor": "#a19c95" },
         { "name": "5 Жилая комната", "color": "#d9c9a8", "at": [5.3, 5.9] },
-        { "name": "6 Жилая комната", "color": "#d9c9a8", "at": [5.3, 2] }
+        { "name": "6 Жилая комната", "color": "#d9c9a8", "at": [5.3, 2], "wallFinish": "plywood" }
       ],
-      "short": "2 этаж"
+      "short": "2 этаж",
+      "ceiling": { "finish": "plywood" },
+      "furniture": [
+        { "type": "closet", "at": [3.7, 1.2], "w": 1.8, "d": 0.6, "rot": 270, "h0": 3.5, "h1": 1.72, "max": 2.6 },
+        { "type": "closet", "at": [3.7, 3.75], "w": 0.5, "d": 0.6, "rot": 270, "max": 2.6, "h0": 2.6, "h1": 2.6 },
+        { "type": "windowSeat", "at": [3.775, 2.8], "w": 1.4, "d": 0.75, "rot": 270 },
+        { "type": "standDesk", "at": [4.6, 2.8], "rot": 270 },
+        { "type": "chair", "at": [5.3, 2.8], "rot": 270 },
+        { "type": "loftBed", "at": [7.45, 3.2], "w": 2.1, "d": 1.6 },
+        { "type": "bath", "style": "free", "at": [9.35, 7.3], "w": 1.7, "d": 0.8, "metal": "brass" },
+        { "type": "toilet", "at": [7.63, 6.35], "d": 0.55, "rot": 270 },
+        { "type": "sink", "at": [11.15, 6.3], "w": 0.5, "d": 0.4, "rot": 90, "color": "#a27a52", "metal": "brass" },
+        { "type": "towel", "at": [10.75, 5.65], "metal": "brass" }
+      ]
     }
   ],
   "roofs": [

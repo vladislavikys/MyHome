@@ -761,7 +761,7 @@ function buildFloor(floor, defaults) {
 
 // Отделка стен по комнатам: тонкая облицовка на гранях стен, обращённых в комнату
 // (плитка до заданной высоты, покраска, вагонка, кирпич). Проёмы обходятся.
-const WALL_KIND = { paint: 'plaster', tiles: 'tiles', wood: 'soffit', brick: 'brick' };
+const WALL_KIND = { paint: 'plaster', tiles: 'tiles', wood: 'soffit', brick: 'brick', plywood: 'plywood' };
 function roomLinings(g, floor, defaults, regions) {
   const rooms = floor.rooms ?? [];
   if (!rooms.some(r => r.wallFinish || r.wallColor)) return;
@@ -823,7 +823,7 @@ function liningRun(g, w, side, a, b, H, t, clip, ops, room, floor) {
   const bands = fin === 'tiles'
     ? [[0, Math.min(H, room.tileHeight ?? 2.1), material(room.tileColor ?? '#e9ecec', clip, { kind: 'tiles' })],
        ...(room.wallColor ? [[Math.min(H, room.tileHeight ?? 2.1), H, material(paintColor, clip, { kind: 'plaster' })]] : [])]
-    : [[0, H, material(fin === 'paint' ? paintColor : room.wallColor ?? (fin === 'wood' ? '#c9a27a' : '#a8583c'), clip, { kind: WALL_KIND[fin] })]];
+    : [[0, H, material(fin === 'paint' ? paintColor : room.wallColor ?? ({ wood: '#c9a27a', plywood: '#d4b88c' }[fin] ?? '#a8583c'), clip, { kind: WALL_KIND[fin] })]];
   const [x1, y1] = w.from, [x2, y2] = w.to;
   const grp = new THREE.Group();
   grp.position.set(x1, floor.elevation, y1);
@@ -927,6 +927,7 @@ const CEILINGS = {
   stretch: { color: '#f7f6f3', opts: { roughness: 0.12, envMapIntensity: 1.3 } },
   wood: { color: '#d8b98c', opts: { kind: 'soffit', roughness: 0.6 } },
   concrete: { color: '#b9b6b0', opts: { kind: 'plaster', roughness: 0.95 } },
+  plywood: { color: '#d4b88c', opts: { kind: 'plywood' } },
 };
 function ceilingOpts(c = {}) {
   const f = CEILINGS[c.finish] ?? CEILINGS.paint;
