@@ -287,6 +287,19 @@
       .ed-field input, .ed-field select { padding: 3px 6px; }
     }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    /* сравнение вариантов шторкой (compare.js) */
+    .cmp-bar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px;
+      max-width: calc(100% - 32px); padding: 8px 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); }
+    .cmp-bar select { max-width: 220px; }
+    .cmp-bar[hidden], .cmp-shot[hidden] { display: none; }
+    .cmp-shot { position: absolute; inset: 0; z-index: 5; cursor: ew-resize; touch-action: none; }
+    .cmp-shot img { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; }
+    .cmp-line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35); }
+    .cmp-line span { position: absolute; top: 50%; left: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }
+    .cmp-line span::before { content: '⇆'; display: block; text-align: center; line-height: 32px; color: #1c2630; font-size: 16px; }
+    .cmp-line:focus-visible span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cmp-tag { position: absolute; bottom: 16px; max-width: 40%; padding: 4px 10px; border-radius: 6px; background: rgb(0 0 0 / 0.6); color: #fff; font-weight: 500; font-size: 13px; pointer-events: none; }
+    .cmp-tag-a { left: 16px; } .cmp-tag-b { right: 16px; }
   </style>
   <script type="importmap">
   {

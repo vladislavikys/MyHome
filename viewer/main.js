@@ -8,6 +8,7 @@ import { openStore, downloadJson, downloadFile, writeMirror } from './store.js';
 import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
 import { applyVariant, captureVariant, tourPoints } from './variants.js';
+import { createCompare } from './compare.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -2065,7 +2066,36 @@ function renderVariants() {
     label.append(sel);
     box.append(label);
   }
+  if (Object.keys(house.variants ?? {}).length) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Сравнить ⇄';
+    btn.title = 'Сравнить два варианта шторкой';
+    btn.onclick = () => compare.open();
+    box.append(btn);
+  }
 }
+
+// Шторка «до / после» для вариантов (compare.js)
+const compare = createCompare({
+  container: app,
+  canvas: renderer.domElement,
+  variants: () => house.variants ?? {},
+  setVariant(group, key) {
+    captureVariant(house, group);
+    applyVariant(house, group, key);
+    build(house);
+    editor.setHouse(house, { keepView: true });
+    const sel = document.getElementById('variant-' + group);
+    if (sel) sel.value = key;
+    scheduleSave();
+  },
+  renderOnce() { if (highQuality) composer.render(); else renderer.render(scene, camera); },
+  freeze(on) {
+    controls.enabled = !on;
+    labelRenderer.domElement.style.visibility = on ? 'hidden' : '';
+  },
+});
 
 async function load() {
   const res = await fetch('house.json', { cache: 'no-store' });
