@@ -165,10 +165,10 @@
         { "type": "sink", "at": [14.45, 5.2], "w": 0.4, "d": 0.3, "rot": 180, "color": "#a27a52", "metal": "brass", "variant": "bath:v1" },
         { "type": "towel", "at": [15.25, 4.95], "rot": 90, "metal": "brass", "variant": "bath:v1" },
         { "type": "shower", "at": [14.85, 4.13], "w": 0.9, "d": 0.8, "mirror": true, "variant": "bath:v2" },
-        { "type": "sink", "at": [14.0, 5.12], "w": 1.2, "d": 0.46, "rot": 180, "color": "#c9a272", "variant": "bath:v2" },
+        { "type": "sink", "at": [13.85, 3.93], "w": 0.6, "d": 0.4, "color": "#c9a272", "variant": "bath:v2" },
         { "type": "toilet", "at": [15.02, 4.95], "d": 0.55, "rot": 90, "variant": "bath:v2" },
         { "type": "wallShelf", "at": [15.17, 4.95], "w": 0.6, "d": 0.22, "rot": 90, "levels": 2, "bottom": 1.2, "step": 0.35, "dishes": false, "color": "#c9a272", "variant": "bath:v2" },
-        { "type": "towel", "at": [13.65, 3.79], "variant": "bath:v2" }
+        { "type": "towel", "at": [14.0, 5.29], "rot": 180, "variant": "bath:v2" }
       ]
     },
     {
