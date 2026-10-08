@@ -4,7 +4,8 @@ import * as THREE from 'three';
 // и густая короткая трава «оболочками» (shell texturing): стопка прозрачных слоёв, в каждом слое
 // остаются только травинки выше его высоты. Вблизи — плотный стриженый газон, издали — ровный ковёр.
 
-export const grassUniforms = { uTime: { value: 0 } };
+// uSeason: x — весна (светлая молодая зелень), y — осень (пожухлая), z — зима (снег); 0…1
+export const grassUniforms = { uTime: { value: 0 }, uSeason: { value: new THREE.Vector3() } };
 
 // Тайлящийся шум 256×256 для крупных пятен (густая, тёмная, подсохшая трава).
 function noiseTexture() {
@@ -43,11 +44,12 @@ export function lawnMaterial(grassTex) {
   const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', map: grassTex.map, normalMap: grassTex.normalMap, roughness: 0.95 });
   mat.onBeforeCompile = sh => {
     sh.uniforms.uNoise = { value: noise };
+    sh.uniforms.uSeason = grassUniforms.uSeason;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform sampler2D uNoise;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform sampler2D uNoise;\nuniform vec3 uSeason;')
       .replace('#include <map_fragment>', `
         vec2 gp = vWPos.xz;
         vec3 g1 = texture2D(map, gp / 3.0).rgb;
@@ -59,8 +61,11 @@ export function lawnMaterial(grassTex) {
         vec3 lush = vec3(0.19, 0.35, 0.09), dark = vec3(0.12, 0.24, 0.06), dry = vec3(0.38, 0.39, 0.17);
         vec3 tint = mix(lush, dark, smoothstep(0.42, 0.78, big));
         tint = mix(tint, dry, smoothstep(0.62, 0.9, mid * 0.6 + big * 0.5) * 0.55);
+        tint = mix(tint, vec3(0.27, 0.48, 0.12), uSeason.x * 0.6);
+        tint = mix(tint, vec3(0.42, 0.36, 0.15), uSeason.y * 0.75);
         tint *= 0.9 + 0.2 * fine;
         diffuseColor.rgb *= tex * tint * 1.55;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.93) * (0.92 + 0.12 * fine), uSeason.z);
       `);
   };
   return mat;
@@ -124,7 +129,7 @@ export function grassField(boundary, excludes) {
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, {
       uTime: grassUniforms.uTime, uBlades: { value: bladeTex }, uNoise: { value: lawnNoise }, uMask: { value: mask },
-      uBox: { value: new THREE.Vector4(...box) }, uHeight: { value: HEIGHT },
+      uBox: { value: new THREE.Vector4(...box) }, uHeight: { value: HEIGHT }, uSeason: grassUniforms.uSeason,
     });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uHeight;\nvarying vec2 vSite;\nvarying float vH;')
@@ -133,7 +138,7 @@ export function grassField(boundary, excludes) {
         vH = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y / uHeight;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform float uTime; uniform sampler2D uBlades, uNoise, uMask; uniform vec4 uBox;
+        uniform float uTime; uniform sampler2D uBlades, uNoise, uMask; uniform vec4 uBox; uniform vec3 uSeason;
         varying vec2 vSite; varying float vH;`)
       .replace('#include <map_fragment>', `
         if (texture2D(uMask, (vSite - uBox.xy) / uBox.zw).r < 0.5) discard;
@@ -148,7 +153,10 @@ export function grassField(boundary, excludes) {
         vec3 lush = vec3(0.19, 0.35, 0.09), dark = vec3(0.12, 0.24, 0.06), dry = vec3(0.38, 0.39, 0.17);
         vec3 tint = mix(lush, dark, smoothstep(0.42, 0.78, big));
         tint = mix(tint, dry, smoothstep(0.62, 0.9, mid * 0.6 + big * 0.5) * 0.55);
+        tint = mix(tint, vec3(0.27, 0.48, 0.12), uSeason.x * 0.6);
+        tint = mix(tint, vec3(0.42, 0.36, 0.15), uSeason.y * 0.75);
         diffuseColor.rgb = tint * (0.5 + 0.65 * vH) * (0.88 + 0.24 * r2);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.94) * (0.8 + 0.2 * vH), uSeason.z);
       `)
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);');
   };

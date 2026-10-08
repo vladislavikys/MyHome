@@ -135,8 +135,41 @@ skyNight.visible = false;
 let sunPlaying = false, sunQueued = false;
 const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
 let nightK = 0, nightMats = new Set(), nightLights = [], flickers = [];   // вечерний свет участка, см. collectNight
+// Сезон: «Авто» — по месяцу даты солнца, или выбран вручную. Трава и газон — через uSeason (grass.js),
+// листва и хвоя — по userData.season материала, крыши (фактура 'roof') зимой под снегом.
+const SEASON_K = { spring: [1, 0, 0], summer: [0, 0, 0], autumn: [0, 1, 0], winter: [0, 0, 1] };
+const seasonUi = document.getElementById('season');
+let seasonMode = 'auto', seasonShown = null;
+try { seasonMode = localStorage.getItem('myhome.season') ?? 'auto'; } catch { /* нет хранилища */ }
+seasonUi.value = seasonMode;
+const seasonOf = date => { const m = +date.slice(5, 7); return m === 12 || m <= 2 ? 'winter' : m <= 5 ? 'spring' : m <= 8 ? 'summer' : 'autumn'; };
+function applySeason(force = false) {
+  const s = seasonMode === 'auto' ? seasonOf(sunState.date) : seasonMode;
+  if (s === seasonShown && !force) return;
+  seasonShown = s;
+  grassUniforms.uSeason.value.set(...SEASON_K[s]);
+  const roofMap = textureSet('roof').map, done = new Set();
+  scene.traverse(o => {
+    const m = o.material;
+    if (!m?.color || done.has(m)) return;
+    done.add(m);
+    const tbl = m.userData.season ?? (m.map === roofMap ? { winter: '#eef1f4' } : null);
+    if (!tbl) return;
+    m.userData.base ??= '#' + m.color.getHexString();
+    m.color.set(tbl[s] ?? m.userData.base);
+  });
+  if (seasonUi.value === 'auto') seasonUi.title = `Сейчас: ${{ spring: 'весна', summer: 'лето', autumn: 'осень', winter: 'зима' }[s]}`;
+}
+seasonUi.addEventListener('change', () => {
+  seasonMode = seasonUi.value;
+  try { localStorage.setItem('myhome.season', seasonMode); } catch { /* нет хранилища */ }
+  applySeason();
+  queueSun();
+});
+
 function applySun() {
   sunQueued = false;
+  applySeason();
   const g = { ...GEO_DEFAULT, ...(house?.geo ?? {}) };
   const { el, az } = sunPosition(localToUtc(sunState.date, sunState.hours, g.tz), g.lat, g.lon);
   const Y = new THREE.Vector3(0, 1, 0);
@@ -151,7 +184,8 @@ function applySun() {
   const old = sky;
   sky = skyTexture(dir);
   old.dispose();
-  if (hdri.tex && el >= 12) {
+  // фотосфера снята летом (зелёный лес) — зимой и осенью вместо неё нарисованное небо
+  if (hdri.tex && el >= 12 && (seasonShown === 'summer' || seasonShown === 'spring')) {
     // днём — настоящая фотосфера неба (Poly Haven, CC0), повёрнутая так, чтобы её солнце совпало с нашим
     const rotY = Math.atan2(dir.z, dir.x) - hdri.sunPhi;
     // фон — фотосфера; рассеянный свет — от нейтрального неба (иначе зелень и синева фото красят стены в комнатах)
@@ -1737,6 +1771,7 @@ function collectNight() {
     if (m?.userData?.night) nightMats.add(m);
   });
   applyNight();
+  applySeason(true);
 }
 function applyNight() {
   for (const m of nightMats) { const [d, n] = m.userData.night; m.emissiveIntensity = d + (n - d) * nightK; }
