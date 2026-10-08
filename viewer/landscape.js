@@ -24,6 +24,8 @@ export const ITEM_TYPES = {
   bench: { name: 'Скамейка', group: 'decor', rect: [1.6, 0.6], fill: '#8a6440' },
   stone: { name: 'Валун', group: 'decor', r: 0.45, fill: '#8f8c86' },
   gazebo: { name: 'Беседка', group: 'decor', rect: [3.2, 3.2], fill: '#a07850' },
+  firepit: { name: 'Место для костра (кресла, гирлянды)', group: 'decor', r: 2.6, fill: '#b3aca0' },
+  screen: { name: 'Экран для проектора (на стену)', group: 'decor', rect: [3.1, 0.1], fill: '#f2f2f2' },
 };
 
 function rng(seed) {
@@ -57,6 +59,16 @@ export function landscapeMats() {
     wood: pbr('#8a6440', 'wood-dark'),
     roof: pbr('#5b3a29', 'roof'),
     glow: new THREE.MeshStandardMaterial({ color: '#fff4d6', emissive: '#ffd58a', emissiveIntensity: 1.4, roughness: 0.4 }),
+    // ночные эффекты: userData.night — яркость свечения днём и ночью (меняется вместе с солнцем)
+    bulb: Object.assign(new THREE.MeshStandardMaterial({ color: '#fff3d0', emissive: '#ffcf7a', emissiveIntensity: 3, roughness: 0.3 }), { userData: { night: [0.6, 3] } }),
+    flame: Object.assign(new THREE.MeshStandardMaterial({ color: '#ff9a3c', emissive: '#ff7a1f', emissiveIntensity: 3, transparent: true, opacity: 0.85, depthWrite: false }), { userData: { night: [2, 4] } }),
+    embers: Object.assign(new THREE.MeshStandardMaterial({ color: '#3a1a0c', emissive: '#ff4a10', emissiveIntensity: 1.5, roughness: 0.9 }), { userData: { night: [0.6, 2.2] } }),
+    screen: Object.assign(new THREE.MeshStandardMaterial({ color: '#f4f5f6', emissive: '#cfdcff', emissiveIntensity: 0, roughness: 0.95 }), { userData: { night: [0, 0.55] } }),
+    pine: pbr('#c9a678', 'wood-dark'),
+    barrel: pbr('#6a4a30', 'wood-dark'),
+    ash: new THREE.MeshStandardMaterial({ color: '#2a2725', roughness: 1 }),
+    wire: new THREE.MeshStandardMaterial({ color: '#1b1b1b', roughness: 0.6 }),
+    black: new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.4, metalness: 0.3 }),
     fruit: new THREE.MeshStandardMaterial({ color: '#b3261e', roughness: 0.45 }),
     flowers: ['#d8434f', '#f2c14e', '#f4f1ea', '#9b5fc0', '#ef8a3a'].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 })),
   };
@@ -219,6 +231,68 @@ function deciduous(g, M, h, crown, rnd, fruit = false) {
   }
 }
 
+// Кресло-шезлонг (адирондак): наклонное сиденье из реек, высокая спинка веером, широкие подлокотники.
+// Смотрит в +z, начало — на земле под сиденьем.
+function adirondack(M, mat) {
+  const g = new THREE.Group();
+  const box = (w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) => {
+    const m = mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    g.add(m);
+    return m;
+  };
+  for (let i = 0; i < 6; i++) {                      // сиденье: спереди 0,38 м, к спинке ниже
+    const t = i / 5;
+    box(0.56, 0.022, 0.075, 0, 0.38 - 0.1 * t, 0.26 - 0.5 * t, 0.2);
+  }
+  for (let i = 0; i < 6; i++) {                      // спинка веером, откинута назад
+    const off = (i - 2.5) * 0.085;
+    const b = box(0.075, 0.82, 0.022, off, 0.66, -0.36, -0.35, 0, -off * 0.25);
+    b.position.x = off * 1.15;
+  }
+  box(0.6, 0.06, 0.03, 0, 0.5, -0.27, -0.35);
+  box(0.66, 0.06, 0.03, 0, 0.9, -0.42, -0.35);
+  for (const sx of [-1, 1]) {
+    box(0.14, 0.024, 0.74, sx * 0.36, 0.6, 0.02);   // подлокотник
+    box(0.06, 0.6, 0.06, sx * 0.33, 0.3, 0.3).userData.collide = true;
+    box(0.05, 0.12, 0.8, sx * 0.3, 0.25, -0.05, 0.38);   // боковина-полоз
+  }
+  return g;
+}
+
+// Гирлянда между точками a и b с провисом sag: тонкий провод и лампочки через ~0,35 м.
+function stringLights(g, M, a, b, sag) {
+  const pts = [];
+  const n = 24;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    pts.push(new THREE.Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t - sag * 4 * t * (1 - t), a.z + (b.z - a.z) * t));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  g.add(mesh(new THREE.TubeGeometry(curve, 32, 0.004, 4, false), M.wire, false));
+  const k = Math.max(2, Math.round(curve.getLength() / 0.35));
+  for (let i = 1; i < k; i++) {
+    const p = curve.getPoint(i / k);
+    const bulb = mesh(new THREE.SphereGeometry(0.028, 8, 6), M.bulb, false);
+    bulb.scale.y = 1.3;
+    bulb.position.set(p.x, p.y - 0.045, p.z);
+    g.add(bulb);
+  }
+}
+
+// Точечный свет, который включается к вечеру (подвижная группа — не запекается).
+function nightLight(g, color, power, x, y, z, distance) {
+  const holder = new THREE.Group();
+  holder.userData.dynamic = true;
+  const l = new THREE.PointLight(color, 0, distance, 2);
+  l.userData.night = power;
+  holder.position.set(x, y, z);
+  holder.add(l);
+  g.add(holder);
+  return holder;
+}
+
 export function buildItem(it, M, seed = 1) {
   const g = new THREE.Group();
   const s = it.size ?? 1;
@@ -292,6 +366,129 @@ export function buildItem(it, M, seed = 1) {
         arm.position.set(x, 0.65, 0);
         g.add(arm);
       }
+      break;
+    }
+    case 'firepit': {
+      // Зона у костра: круг гравия с бордюром, каменный очаг с огнём, кресла по кругу (открыто к +z — к экрану),
+      // столбы в бочках-кашпо с гирляндами, проектор на стойке с дальней стороны.
+      const R = 2.6 * s;
+      const pad = mesh(new THREE.CircleGeometry(R, 64), M.gravel, false);
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.y = 0.02;
+      pad.userData.walkable = true;
+      g.add(pad);
+      const edge = mesh(new THREE.CylinderGeometry(R, R, 0.05, 64, 1, true), M.metal, false);
+      edge.position.y = 0.015;
+      g.add(edge);
+      // очаг: три ряда камней по кругу со смещением
+      const rr = 0.52, nb = 14;
+      for (let c = 0; c < 3; c++) for (let i = 0; i < nb; i++) {
+        const a = ((i + (c % 2) * 0.5) / nb) * Math.PI * 2;
+        const st = mesh(new THREE.BoxGeometry(0.21, 0.11, 0.15), M.stone);
+        st.position.set(Math.cos(a) * rr, 0.06 + c * 0.115, Math.sin(a) * rr);
+        st.rotation.y = -a + Math.PI / 2 + (rnd() - 0.5) * 0.08;
+        st.userData.collide = c === 0;
+        g.add(st);
+      }
+      const ash = mesh(new THREE.CircleGeometry(0.44, 24), M.ash, false);
+      ash.rotation.x = -Math.PI / 2;
+      ash.position.y = 0.05;
+      g.add(ash);
+      const coals = mesh(new THREE.CircleGeometry(0.26, 20), M.embers, false);
+      coals.rotation.x = -Math.PI / 2;
+      coals.position.y = 0.06;
+      g.add(coals);
+      for (let i = 0; i < 4; i++) {
+        const lg = mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.62, 8), M.bark);
+        const a = (i / 4) * Math.PI + rnd() * 0.3;
+        lg.rotation.set(Math.PI / 2 - 0.35, 0, 0);
+        const w = new THREE.Group();
+        w.add(lg);
+        w.rotation.y = a;
+        w.position.y = 0.16;
+        lg.position.z = 0.0;
+        g.add(w);
+      }
+      const fire = new THREE.Group();
+      fire.userData.dynamic = true;
+      fire.userData.flicker = true;
+      for (let i = 0; i < 5; i++) {
+        const f = mesh(new THREE.ConeGeometry(0.09 + rnd() * 0.06, 0.35 + rnd() * 0.3, 7), M.flame, false);
+        f.position.set((rnd() - 0.5) * 0.2, 0.32 + rnd() * 0.08, (rnd() - 0.5) * 0.2);
+        fire.add(f);
+      }
+      g.add(fire);
+      const fl = nightLight(g, '#ff8a3d', 7, 0, 0.6, 0, 10);
+      fl.userData.flicker = true;
+      // кресла: дуга, открытая к экрану (+z)
+      const nc = it.chairs ?? 5;
+      for (let i = 0; i < nc; i++) {
+        const a = THREE.MathUtils.degToRad(155 + (230 * i) / Math.max(1, nc - 1));
+        const ch = adirondack(M, M.pine);
+        const x = Math.cos(a) * 1.6 * Math.min(1, s), z = Math.sin(a) * 1.6 * Math.min(1, s);
+        ch.position.set(x, 0.02, z);
+        ch.rotation.y = Math.atan2(-x, -z);
+        g.add(ch);
+      }
+      // столбы в бочках по краю и гирлянды между ними
+      const np = it.posts ?? 5, tops = [];
+      for (let i = 0; i < np; i++) {
+        const a = (i / np) * Math.PI * 2 + Math.PI / 2 + 1.5 * Math.PI / np;   // ни один столб не встаёт на линию проектор — экран
+        const x = Math.cos(a) * (R - 0.2), z = Math.sin(a) * (R - 0.2);
+        const barrel = mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.5, 18), M.barrel);
+        barrel.position.set(x, 0.25, z);
+        barrel.userData.collide = true;
+        g.add(barrel);
+        for (const y of [0.1, 0.4]) {
+          const hoop = mesh(new THREE.TorusGeometry(0.29 - (0.4 - y) * 0.06, 0.008, 4, 24), M.metal, false);
+          hoop.rotation.x = Math.PI / 2;
+          hoop.position.set(x, y, z);
+          g.add(hoop);
+        }
+        const soil = mesh(new THREE.CircleGeometry(0.27, 16), M.soil, false);
+        soil.rotation.x = -Math.PI / 2;
+        soil.position.set(x, 0.47, z);
+        g.add(soil);
+        const post = mesh(new THREE.BoxGeometry(0.09, 2.7, 0.09), M.pine);
+        post.position.set(x, 1.6, z);
+        post.userData.collide = true;
+        g.add(post);
+        tops.push(new THREE.Vector3(x, 2.85, z));
+      }
+      for (let i = 0; i < np; i++) stringLights(g, M, tops[i], tops[(i + 1) % np], 0.45);
+      nightLight(g, '#ffd08a', 4, 0, 2.5, 0, 9);
+      // проектор на стойке за креслами, объектив к экрану (+z)
+      if (it.projector !== false) {
+        const pz = -(R - 0.45);
+        const pole = mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.35, 8), M.black);
+        pole.position.set(0, 0.7, pz);
+        g.add(pole);
+        const foot = mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.03, 16), M.black);
+        foot.position.set(0, 0.035, pz);
+        g.add(foot);
+        const shelf = mesh(new THREE.BoxGeometry(0.34, 0.02, 0.3), M.black);
+        shelf.position.set(0, 1.38, pz);
+        g.add(shelf);
+        const body = mesh(new THREE.BoxGeometry(0.3, 0.1, 0.24), M.metal);
+        body.position.set(0, 1.44, pz);
+        g.add(body);
+        const lens = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 16), M.black);
+        lens.rotation.x = Math.PI / 2;
+        lens.position.set(0.07, 1.44, pz + 0.13);
+        g.add(lens);
+      }
+      break;
+    }
+    case 'screen': {
+      // экран для проектора на стене: чёрная рамка, белое полотно 16:9; ночью слегка светится — «кино».
+      // Сзади (−z) — стена; it.bottom — высота низа над землёй, it.width — ширина полотна.
+      const Wd = (it.width ?? 3) * s, Hd = Wd * 9 / 16, y0 = it.bottom ?? 1.2;
+      const frame = mesh(new THREE.BoxGeometry(Wd + 0.12, Hd + 0.12, 0.04), M.black);
+      frame.position.set(0, y0 + Hd / 2, 0);
+      g.add(frame);
+      const cloth = mesh(new THREE.BoxGeometry(Wd, Hd, 0.042), M.screen, false);
+      cloth.position.set(0, y0 + Hd / 2, 0.002);
+      g.add(cloth);
       break;
     }
     case 'gazebo': {

@@ -99,6 +99,7 @@ const sunState = (() => {
 })();
 let sunPlaying = false, sunQueued = false;
 const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+let nightK = 0, nightMats = new Set(), nightLights = [], flickers = [];   // вечерний свет участка, см. collectNight
 function applySun() {
   sunQueued = false;
   const g = { ...GEO_DEFAULT, ...(house?.geo ?? {}) };
@@ -138,6 +139,8 @@ function applySun() {
   const lightDir = w > 0.05 ? dirOf(Math.max(el, 1.5), az) : dirOf(35, az + 180);
   sun.position.copy(sun.target.position).addScaledVector(lightDir, 60);
   sun.intensity = w * 3.3 * (0.35 + 0.65 * smooth(0, 15, el)) + (1 - w) * 0.55;
+  nightK = 1 - smooth(-4, 8, el);
+  applyNight();
   sun.color.set(w > 0.05 ? '#ff9a55' : '#8fa6d8');
   if (w > 0.05) sun.color.lerp(new THREE.Color('#fff1dc'), smooth(2, 25, el));
   const hh = sunState.hours;
@@ -1644,6 +1647,30 @@ function fence(boundary, gates, height = 2.0) {
   return g;
 }
 
+// Вечерний свет участка: гирлянды, костёр, экран. Материалы с userData.night = [день, ночь] — яркость свечения,
+// точечные лампы с userData.night — мощность ночью (днём выключены). Огонь мерцает (userData.flicker).
+function collectNight() {
+  nightMats = new Set(); nightLights = []; flickers = [];
+  siteGroup.traverse(o => {
+    if (o.isLight && o.userData.night) nightLights.push(o);
+    if (o.userData.flicker) flickers.push(o);
+    const m = o.material;
+    if (m?.userData?.night) nightMats.add(m);
+  });
+  applyNight();
+}
+function applyNight() {
+  for (const m of nightMats) { const [d, n] = m.userData.night; m.emissiveIntensity = d + (n - d) * nightK; }
+  for (const l of nightLights) l.intensity = l.userData.night * nightK;
+}
+function animateFlicker(t) {
+  for (const o of flickers) {
+    const k = 1 + 0.12 * Math.sin(t * 9.1 + o.id) + 0.08 * Math.sin(t * 23.7 + o.id * 3);
+    if (o.children[0]?.isLight) o.children[0].intensity = o.children[0].userData.night * nightK * k;
+    else o.scale.set(1, k, 1);
+  }
+}
+
 // Положение дома на участке: точка at (участок) ← начало координат дома, поворот rot (°).
 function housePlace(site) {
   return { at: site?.house?.at ?? [0, 0], rot: site?.house?.rot ?? 0 };
@@ -1688,6 +1715,10 @@ function buildSite(site, house) {
       const h = 1.65 * (it.size ?? 1);
       return [[-h, -h], [h, -h], [h, h], [-h, h]].map(([x, y]) => [it.at[0] + x, it.at[1] + y]);
     }),
+    ...(site.items ?? []).filter(it => it.type === 'firepit').map(it => {
+      const r = 2.6 * (it.size ?? 1);
+      return Array.from({ length: 32 }, (_, i) => [it.at[0] + Math.cos(i / 32 * Math.PI * 2) * r, it.at[1] + Math.sin(i / 32 * Math.PI * 2) * r]);
+    }),
   ];
   grassMesh = grassField(site.boundary, excludes);
   if (grassMesh) { grassMesh.visible = highQuality && !photo?.active; inner.add(grassMesh); }
@@ -1703,6 +1734,7 @@ function buildSite(site, house) {
   }
   if (site.boundary) inner.add(fence(site.boundary, (site.gates ?? []).map(normGate), site.fenceHeight));
   bakeGroup(siteGroup);
+  collectNight();
 }
 
 // ---------- двери: открыть / закрыть ----------
@@ -1770,6 +1802,7 @@ renderer.setAnimationLoop(() => {
   tickSun(dt);
   grassUniforms.uTime.value = clock.elapsedTime;
   animateDoors(dt);
+  animateFlicker(clock.elapsedTime);
   if (photo.active) { photo.update(); return; }
   if (tour.active) tour.update();
   else if (walk.active) walk.update(dt);
