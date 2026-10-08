@@ -66,3 +66,11 @@ export function tourPoints(house) {
     return house.variants?.[group]?.active === key;
   });
 }
+
+// Предмет с полем variant: "группа:ключ" показывается только при активном варианте этой группы
+// (так варианты кухни и санузла живут в одном списке мебели и переключаются независимо).
+export function variantShown(house, it) {
+  if (!it.variant) return true;
+  const [group, key] = it.variant.split(':');
+  return house?.variants?.[group]?.active === key;
+}

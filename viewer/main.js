@@ -7,7 +7,7 @@ import { createEditor } from './editor.js';
 import { openStore, downloadJson, downloadFile, writeMirror } from './store.js';
 import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
-import { applyVariant, captureVariant, tourPoints } from './variants.js';
+import { applyVariant, captureVariant, tourPoints, variantShown } from './variants.js';
 import { createCompare } from './compare.js';
 import { createStickers } from './stickers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -760,6 +760,7 @@ function buildFloor(floor, defaults) {
 }
 
 // Отделка стен по комнатам: тонкая облицовка на гранях стен, обращённых в комнату
+    if (!variantShown(house, it)) continue;
 // (плитка до заданной высоты, покраска, вагонка, кирпич). Проёмы обходятся.
 const WALL_KIND = { paint: 'plaster', tiles: 'tiles', wood: 'soffit', brick: 'brick', plywood: 'plywood' };
 function roomLinings(g, floor, defaults, regions) {

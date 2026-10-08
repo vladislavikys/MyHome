@@ -2,6 +2,7 @@
 // Работает мышью и пальцем. Меняет объект house на месте и сообщает об изменениях.
 
 import { computeRooms } from './rooms.js';
+import { variantShown } from './variants.js';
 import { stairSteps } from './stairs.js';
 import { AREA_KINDS, ITEM_TYPES } from './landscape.js';
 import { FURNITURE, FLOOR_FINISHES, WALL_FINISHES, furnSize } from './interior.js';
@@ -326,7 +327,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     for (const [k, room] of (floor().rooms ?? []).entries()) {
       if (room.at && Math.abs(p[0] - room.at[0]) < 0.9 && Math.abs(p[1] - room.at[1]) < 0.35) return { kind: 'room', room, index: k };
     }
-    for (const it of [...(floor().furniture ?? [])].reverse()) if (insidePoly(p, furnPoly(it))) return { kind: 'furn', it };
+    for (const it of [...(floor().furniture ?? [])].reverse()) if (variantShown(house, it) && insidePoly(p, furnPoly(it))) return { kind: 'furn', it };
     let best = null, bestD = Infinity;
     for (const w of walls()) {
       const pr = projectOnWall(w, p);
@@ -1237,6 +1238,7 @@ export function createEditor(root, { onChange, onFloor, onSite }) {
     }
     // мебель
     for (const it of f.furniture ?? []) {
+      if (!variantShown(house, it)) continue;
       const T = FURNITURE[it.type];
       const poly = furnPoly(it);
       out.push(`<polygon class="g-furn" points="${poly.map(q => q.join(',')).join(' ')}" fill="${it.color ?? T?.fill ?? '#ccc'}" stroke-width="${1 * k}"/>`);

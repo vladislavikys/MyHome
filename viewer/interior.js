@@ -733,12 +733,15 @@ export function buildFurniture(it, M) {
       break;
     }
     case 'shower': {
+      // поддон, стекло спереди и сбоку (it.mirror — боковое стекло слева, стойка справа), стойка с лейкой у задней стены
+      const sx = it.mirror ? -1 : 1;
       rbox(g, W, 0.06, D, M.gloss('#f3f3f1'), 0, 0.03, 0);
       rbox(g, W, 2.0, 0.01, M.glass, 0, 1.06, hd - 0.005);
-      rbox(g, 0.01, 2.0, D, M.glass, hw - 0.005, 1.06, 0);
-      rbox(g, 0.02, 2.0, 0.02, M.chrome, hw - 0.01, 1.06, hd - 0.01);
-      cyl(g, 0.012, 0.012, 1.1, M.chrome, -hw + 0.1, 1.6, -hd + 0.06, 8);
-      cyl(g, 0.12, 0.12, 0.015, M.chrome, -hw + 0.25, 2.1, -hd + 0.25, 20);
+      rbox(g, 0.01, 2.0, D, M.glass, sx * (hw - 0.005), 1.06, 0);
+      rbox(g, 0.02, 2.0, 0.02, M.chrome, sx * (hw - 0.01), 1.06, hd - 0.01);
+      cyl(g, 0.012, 0.012, 1.1, M.chrome, -sx * (hw - 0.1), 1.6, -hd + 0.06, 8);
+      cyl(g, 0.12, 0.12, 0.015, M.chrome, -sx * (hw - 0.25), 2.1, -hd + 0.25, 20);
+      cyl(g, 0.03, 0.03, 0.004, M.black, 0, 0.062, 0, 16).castShadow = false;   // слив
       break;
     }
     case 'walkin': {

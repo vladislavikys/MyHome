@@ -146,47 +146,29 @@
       ],
       "ceiling": { "color": "#e8dabf" },
       "furniture": [
-        {
-          "type": "kitchen",
-          "at": [9.325, 8.49],
-          "w": 3.75,
-          "rot": 180,
-          "uppers": false,
-          "sink": 0.5,
-          "hob": null
-        },
-        { "type": "fridge", "at": [10.95, 5.79], "rot": 90, "d": 0.6, "builtin": true },
-        { "type": "oventower", "at": [10.95, 6.4], "rot": 90 },
-        {
-          "type": "kitchen",
-          "at": [10.94, 7.44],
-          "w": 1.48,
-          "rot": 90,
-          "sink": null,
-          "hob": 0.5,
-          "hood": "downdraft"
-        },
-        { "type": "diningOval", "at": [5.05, 6.6], "rot": 0, "style": "loft" },
-        {
-          "type": "bar",
-          "at": [7.53, 6.795],
-          "w": 2.79,
-          "d": 0.46,
-          "rot": 90,
-          "cut": [0.3, 0.4],
-          "style": "step",
-          "kitchen": false,
-          "stools": 0,
-          "pendants": 3,
-          "shelf": 0.61,
-          "shelfStart": 0.25
-        },
-        { "type": "wallShelf", "at": [10.7, 8.67], "w": 0.9, "d": 0.26, "rot": 180 },
-        { "type": "wallShelf", "at": [7.9, 8.67], "w": 0.9, "d": 0.26, "rot": 180 },
-        { "type": "walkin", "at": [14.275, 4.155], "w": 2.05, "d": 0.85, "color": "#77736d", "rack": true, "floorD": 0.77 },
-        { "type": "toilet", "at": [13.75, 5.07], "d": 0.55, "rot": 180 },
-        { "type": "sink", "at": [14.45, 5.2], "w": 0.4, "d": 0.3, "rot": 180, "color": "#a27a52", "metal": "brass" },
-        { "type": "towel", "at": [15.25, 4.95], "rot": 90, "metal": "brass" }
+        { "type": "kitchen", "at": [9.325, 8.49], "w": 3.75, "rot": 180, "uppers": false, "sink": 0.5, "hob": null, "variant": "kitchen:v1" },
+        { "type": "fridge", "at": [10.95, 5.79], "rot": 90, "d": 0.6, "builtin": true, "variant": "kitchen:v1" },
+        { "type": "oventower", "at": [10.95, 6.4], "rot": 90, "variant": "kitchen:v1" },
+        { "type": "kitchen", "at": [10.94, 7.44], "w": 1.48, "rot": 90, "sink": null, "hob": 0.5, "hood": "downdraft", "variant": "kitchen:v1" },
+        { "type": "diningOval", "at": [5.05, 6.6], "rot": 0, "style": "loft", "variant": "kitchen:v1" },
+        { "type": "bar", "at": [7.53, 6.795], "w": 2.79, "d": 0.46, "rot": 90, "cut": [0.3, 0.4], "style": "step", "kitchen": false, "stools": 0, "pendants": 3, "shelf": 0.61, "shelfStart": 0.25, "variant": "kitchen:v1" },
+        { "type": "wallShelf", "at": [10.7, 8.67], "w": 0.9, "d": 0.26, "rot": 180, "variant": "kitchen:v1" },
+        { "type": "wallShelf", "at": [7.9, 8.67], "w": 0.9, "d": 0.26, "rot": 180, "variant": "kitchen:v1" },
+        { "type": "fridge", "at": [10.95, 5.75], "rot": 90, "d": 0.6, "builtin": true, "handleless": true, "color": "#cfcac3", "variant": "kitchen:v2" },
+        { "type": "oventower", "at": [10.95, 6.35], "rot": 90, "color": "#cfcac3", "variant": "kitchen:v2" },
+        { "type": "tall", "at": [10.95, 6.95], "rot": 90, "handleless": true, "color": "#cfcac3", "variant": "kitchen:v2" },
+        { "type": "kitchen", "at": [10.9, 8.025], "w": 1.55, "rot": 90, "sink": null, "hob": 0.5, "handleless": true, "splash": "marble", "top": "#f3f1ed", "color": "#cfcac3", "variant": "kitchen:v2" },
+        { "type": "island2", "at": [8.3, 7.15], "w": 2.6, "d": 1.0, "rot": 180, "slab": 0.9, "stools": 2, "pendants": 3, "color": "#d3cfc9", "variant": "kitchen:v2" },
+        { "type": "diningOval", "at": [5.3, 6.3], "rot": 90, "style": "loft", "variant": "kitchen:v2" },
+        { "type": "walkin", "at": [14.275, 4.155], "w": 2.05, "d": 0.85, "color": "#77736d", "rack": true, "floorD": 0.77, "variant": "bath:v1" },
+        { "type": "toilet", "at": [13.75, 5.07], "d": 0.55, "rot": 180, "variant": "bath:v1" },
+        { "type": "sink", "at": [14.45, 5.2], "w": 0.4, "d": 0.3, "rot": 180, "color": "#a27a52", "metal": "brass", "variant": "bath:v1" },
+        { "type": "towel", "at": [15.25, 4.95], "rot": 90, "metal": "brass", "variant": "bath:v1" },
+        { "type": "shower", "at": [14.85, 4.13], "w": 0.9, "d": 0.8, "mirror": true, "variant": "bath:v2" },
+        { "type": "sink", "at": [14.0, 5.12], "w": 1.2, "d": 0.46, "rot": 180, "color": "#c9a272", "variant": "bath:v2" },
+        { "type": "toilet", "at": [15.02, 4.95], "d": 0.55, "rot": 90, "variant": "bath:v2" },
+        { "type": "wallShelf", "at": [15.17, 4.95], "w": 0.6, "d": 0.22, "rot": 90, "levels": 2, "bottom": 1.2, "step": 0.35, "dishes": false, "color": "#c9a272", "variant": "bath:v2" },
+        { "type": "towel", "at": [13.65, 3.79], "variant": "bath:v2" }
       ]
     },
     {
@@ -672,90 +654,20 @@
       "options": {
         "v1": {
           "name": "Вариант 1: П-кухня и барная стойка",
-          "set": {
-            "floors.0.furniture": [
-              {
-                "type": "kitchen",
-                "at": [9.325, 8.49],
-                "w": 3.75,
-                "rot": 180,
-                "uppers": false,
-                "sink": 0.5,
-                "hob": null
-              },
-              { "type": "fridge", "at": [10.95, 5.79], "rot": 90, "d": 0.6, "builtin": true },
-              { "type": "oventower", "at": [10.95, 6.4], "rot": 90 },
-              {
-                "type": "kitchen",
-                "at": [10.94, 7.44],
-                "w": 1.48,
-                "rot": 90,
-                "sink": null,
-                "hob": 0.5,
-                "hood": "downdraft"
-              },
-              { "type": "diningOval", "at": [5.05, 6.6], "rot": 0, "style": "loft" },
-              {
-                "type": "bar",
-                "at": [7.53, 6.795],
-                "w": 2.79,
-                "d": 0.46,
-                "rot": 90,
-                "cut": [0.3, 0.4],
-                "style": "step",
-                "kitchen": false,
-                "stools": 0,
-                "pendants": 3,
-                "shelf": 0.61,
-                "shelfStart": 0.25
-              },
-              { "type": "wallShelf", "at": [10.7, 8.67], "w": 0.9, "d": 0.26, "rot": 180 },
-              { "type": "wallShelf", "at": [7.9, 8.67], "w": 0.9, "d": 0.26, "rot": 180 }
-            ]
-          }
+          "set": {}
         },
         "v2": {
           "name": "Вариант 2: колонны и остров с мойкой",
-          "set": {
-            "floors.0.furniture": [
-              {
-                "type": "fridge",
-                "at": [10.95, 5.75],
-                "rot": 90,
-                "d": 0.6,
-                "builtin": true,
-                "handleless": true,
-                "color": "#cfcac3"
-              },
-              { "type": "oventower", "at": [10.95, 6.35], "rot": 90, "color": "#cfcac3" },
-              { "type": "tall", "at": [10.95, 6.95], "rot": 90, "handleless": true, "color": "#cfcac3" },
-              {
-                "type": "kitchen",
-                "at": [10.9, 8.025],
-                "w": 1.55,
-                "rot": 90,
-                "sink": null,
-                "hob": 0.5,
-                "handleless": true,
-                "splash": "marble",
-                "top": "#f3f1ed",
-                "color": "#cfcac3"
-              },
-              {
-                "type": "island2",
-                "at": [8.3, 7.15],
-                "w": 2.6,
-                "d": 1.0,
-                "rot": 180,
-                "slab": 0.9,
-                "stools": 2,
-                "pendants": 3,
-                "color": "#d3cfc9"
-              },
-              { "type": "diningOval", "at": [5.3, 6.3], "rot": 90, "style": "loft" }
-            ]
-          }
+          "set": {}
         }
+      }
+    },
+    "bath": {
+      "label": "Санузел 1 эт.",
+      "active": "v1",
+      "options": {
+        "v1": { "name": "Вариант 1: душ без поддона и стеллаж", "set": {} },
+        "v2": { "name": "Вариант 2: поддон в углу, тумба во всю стену", "set": {} }
       }
     }
   },
