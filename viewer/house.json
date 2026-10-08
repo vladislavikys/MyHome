@@ -106,7 +106,14 @@
         { "name": "1 Тамбур", "color": "#b9a894", "at": [12.25, 6.6], "texture": "herringbone" },
         { "name": "2 Мини-котельная", "color": "#b9a894", "at": [14.3, 6.6], "texture": "herringbone" },
         { "name": "3 Прихожая", "color": "#b9a894", "at": [11.6, 4.6], "texture": "herringbone" },
-        { "name": "4 Санузел", "color": "#b9a894", "at": [14.3, 4.55], "texture": "herringbone" },
+        {
+          "name": "4 Санузел",
+          "color": "#8f8b85",
+          "at": [14.3, 4.55],
+          "texture": "plaster",
+          "wallFinish": "paint",
+          "wallColor": "#a19c95"
+        },
         { "name": "5 Жилая комната", "color": "#b9a894", "at": [13.3, 1.9], "texture": "herringbone" },
         {
           "name": "6 Лестница",
@@ -175,7 +182,11 @@
           "shelfStart": 0.25
         },
         { "type": "wallShelf", "at": [10.7, 8.67], "w": 0.9, "d": 0.26, "rot": 180 },
-        { "type": "wallShelf", "at": [7.9, 8.67], "w": 0.9, "d": 0.26, "rot": 180 }
+        { "type": "wallShelf", "at": [7.9, 8.67], "w": 0.9, "d": 0.26, "rot": 180 },
+        { "type": "walkin", "at": [14.275, 4.155], "w": 2.05, "d": 0.85, "color": "#77736d", "rack": true, "floorD": 0.77 },
+        { "type": "toilet", "at": [13.75, 5.07], "d": 0.55, "rot": 180 },
+        { "type": "sink", "at": [14.45, 5.2], "w": 0.4, "d": 0.3, "rot": 180, "color": "#a27a52", "metal": "brass" },
+        { "type": "towel", "at": [15.25, 4.95], "rot": 90, "metal": "brass" }
       ]
     },
     {

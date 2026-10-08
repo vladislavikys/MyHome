@@ -54,6 +54,8 @@ export function createWalk({ camera, dom, ui, getColliders, getWalkables }) {
     document.body.classList.add('walking');
     lamp.intensity = 6;
     apply();
+    // мышь сразу управляет взглядом (курсор захвачен); Esc браузер обрабатывает сам — отпускает курсор, ловим ниже
+    if (matchMedia('(pointer: fine)').matches) dom.requestPointerLock?.()?.catch?.(() => {});
   }
 
   function exit() {
@@ -66,6 +68,7 @@ export function createWalk({ camera, dom, ui, getColliders, getWalkables }) {
     camera.fov = savedFov;
     camera.updateProjectionMatrix();
     document.body.classList.remove('walking');
+    if (document.pointerLockElement === dom) document.exitPointerLock();
   }
 
   function apply() {
@@ -119,16 +122,27 @@ export function createWalk({ camera, dom, ui, getColliders, getWalkables }) {
   const typing = ev => ev.target.closest?.('input:not([type="checkbox"]), select, textarea');
   window.addEventListener('keydown', ev => {
     if (!active || typing(ev)) return;
-    if (ev.code === 'Escape') { ui.exitWalk.click(); return; }
+    if (ev.code === 'Escape' || ev.code === 'Backspace') { ev.preventDefault(); ui.exitWalk.click(); return; }
     keys.add(ev.code);
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.code)) ev.preventDefault();
   });
   window.addEventListener('keyup', ev => keys.delete(ev.code));
   window.addEventListener('blur', () => keys.clear());
 
-  // осмотр: тянуть мышью или пальцем по сцене
+  // осмотр мышью: курсор захвачен — взгляд следует за движением без нажатия
+  document.addEventListener('mousemove', ev => {
+    if (!active || document.pointerLockElement !== dom) return;
+    yaw -= ev.movementX * 0.0025;
+    pitch = Math.max(-1.45, Math.min(1.45, pitch - ev.movementY * 0.0025));
+  });
+  // Esc в захвате курсора браузер не отдаёт странице — выходим, когда захват снят
+  document.addEventListener('pointerlockchange', () => {
+    if (active && document.pointerLockElement !== dom) ui.exitWalk.click();
+  });
+
+  // осмотр пальцем (или мышью без захвата): тянуть по сцене
   dom.addEventListener('pointerdown', ev => {
-    if (!active) return;
+    if (!active || document.pointerLockElement === dom) return;
     look = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
     dom.setPointerCapture(ev.pointerId);
   });

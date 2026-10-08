@@ -46,6 +46,7 @@ export const FURNITURE = {
   wallShelf: { name: 'Полки для посуды (на стену)', group: 'Кухня', size: [0.9, 0.26], fill: '#8a5a3a' },
   bath: { name: 'Ванна', group: 'Ванная', size: [1.7, 0.75], fill: '#f3f3f1' },
   shower: { name: 'Душевая', group: 'Ванная', size: [0.9, 0.9], fill: '#cfe3ea' },
+  walkin: { name: 'Душ без поддона со скамьёй', group: 'Ванная', size: [2.05, 0.85], fill: '#77736d' },
   toilet: { name: 'Унитаз', group: 'Ванная', size: [0.38, 0.62], fill: '#f3f3f1' },
   sink: { name: 'Раковина с тумбой', group: 'Ванная', size: [0.8, 0.48], fill: '#f3f3f1' },
   washer: { name: 'Стиральная машина', group: 'Ванная', size: [0.6, 0.6], fill: '#eceeee' },
@@ -81,7 +82,8 @@ export function furnitureMats() {
     led: get('led', () => new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#eef4ff', emissiveIntensity: 1.6 })),
     iron: get('iron', () => new THREE.MeshStandardMaterial({ color: '#2a2c2e', roughness: 0.6, metalness: 0.5 })),
     steel: get('steel', () => new THREE.MeshStandardMaterial({ color: '#c3c7ca', roughness: 0.3, metalness: 0.85 })),
-    chrome: get('chrome', () => new THREE.MeshStandardMaterial({ color: '#d9dde0', roughness: 0.12, metalness: 1 })),
+    brass: get('brass', () => new THREE.MeshStandardMaterial({ color: '#b8913f', roughness: 0.3, metalness: 0.9 })),
+    chrome: get('chrome',() => new THREE.MeshStandardMaterial({ color: '#d9dde0', roughness: 0.12, metalness: 1 })),
     black: get('black', () => new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.35, metalness: 0.4 })),
     counter: get('counter', () => pbr('#dcd7cf', 'plaster', { roughness: 0.25, normalScale: new THREE.Vector2(0.15, 0.15) })),
     glass: get('glass', () => new THREE.MeshStandardMaterial({ color: '#cfe3ea', transparent: true, opacity: 0.25, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide })),
@@ -149,7 +151,7 @@ function cabinetBody(g, mat, x0, x1, z0, z1, holes = [], top = 0.86, low = 0.68)
 
 // Мойка в вырезе: чаша ниже столешницы, бортик, слив, смеситель с изогнутым изливом.
 // faucetZ — где стоит смеситель, dir — куда смотрит излив (+1 — в сторону +z).
-function sinkBowl(g, M, x, z, w, d, faucetZ, dir, { top = 0.9, depth = 0.18, mat = M.steel } = {}) {
+function sinkBowl(g, M, x, z, w, d, faucetZ, dir, { top = 0.9, depth = 0.18, mat = M.steel, small = false, metal = M.chrome } = {}) {
   const b = top - depth, t = 0.01;
   rbox(g, w, t, d, mat, x, b + t / 2, z);
   for (const s of [-1, 1]) {
@@ -162,6 +164,16 @@ function sinkBowl(g, M, x, z, w, d, faucetZ, dir, { top = 0.9, depth = 0.18, mat
     rbox(g, r, 0.006, d, mat, x + s * (w / 2 + r / 2), top + 0.003, z);
   }
   cyl(g, 0.035, 0.035, 0.004, M.black, x, b + t + 0.002, z, 16).castShadow = false;
+  if (small) {
+    // обычный маленький смеситель для раковины: корпус 15 см, короткий носик, рычажок сверху
+    cyl(g, 0.022, 0.024, 0.15, metal, x, top + 0.075, faucetZ, 14);
+    const sp = cyl(g, 0.011, 0.011, 0.09, metal, x, top + 0.13, faucetZ + dir * 0.045, 10);
+    sp.rotation.x = Math.PI / 2;
+    cyl(g, 0.012, 0.012, 0.012, metal, x, top + 0.12, faucetZ + dir * 0.09, 10);
+    const lv = rbox(g, 0.01, 0.01, 0.07, metal, x, top + 0.165, faucetZ - dir * 0.025);
+    lv.rotation.x = -dir * 0.25;
+    return;
+  }
   cyl(g, 0.024, 0.027, 0.04, M.chrome, x, top + 0.02, faucetZ, 12);
   cyl(g, 0.012, 0.012, 0.28, M.chrome, x, top + 0.18, faucetZ, 10);
   const arc = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.012, 8, 16, Math.PI), M.chrome);
@@ -702,6 +714,83 @@ export function buildFurniture(it, M) {
       cyl(g, 0.12, 0.12, 0.015, M.chrome, -hw + 0.25, 2.1, -hd + 0.25, 20);
       break;
     }
+    case 'walkin': {
+      // душевая зона во всю ширину у стены (сзади −z): слева скамья (терракотовое основание, дубовая доска),
+      // диагональное стекло от стены к проходу, справа тропический душ и лейка на штанге. it.metal = 'chrome' — хром вместо латуни
+      const met = it.metal === 'chrome' ? M.chrome : M.brass;
+      // пол: стяжка сухой части на уровне fh, в душе — уклон от края к линейному трапу у стены (z = zd).
+      // it.floorD — сколько стяжки продлить дальше в комнату (+z), чтобы пол санузла был ровным
+      const fh = 0.025, zd = -hd + 0.1, gx0 = -hw + (it.glassFrom ?? 0.8), gx1 = -hw + (it.glassTo ?? 1.45);
+      const gxAt = z => gx0 + ((z + hd) / D) * (gx1 - gx0);
+      const fd = it.floorD ?? 0;
+      const dry = new THREE.Shape([[-hw, -hd], [gx0, -hd], [gx1, hd], [hw, hd], [hw, hd + fd], [-hw, hd + fd]].map(([x, z]) => new THREE.Vector2(x, z)));
+      const dm = new THREE.Mesh(new THREE.ExtrudeGeometry(dry, { depth: fh, bevelEnabled: false }), pbr(it.dryColor ?? '#8f8b85', 'plaster'));
+      dm.rotation.x = Math.PI / 2; dm.position.y = fh; dm.receiveShadow = true; g.add(dm);
+      const wetY = z => z <= zd ? 0.004 + (zd - z) * 0.03 : 0.004 + ((z - zd) / (hd - zd)) * (fh - 0.004);
+      const pos = [];
+      for (const [za, zb] of [[-hd, zd], [zd, hd]]) {
+        const a0 = [gxAt(za), wetY(za), za], a1 = [hw, wetY(za), za], b0 = [gxAt(zb), wetY(zb), zb], b1 = [hw, wetY(zb), zb];
+        pos.push(...a0, ...b0, ...a1, ...a1, ...b0, ...b1);
+      }
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      wg.computeVertexNormals();
+      const wm = new THREE.Mesh(wg, M.matte(col)); wm.receiveShadow = true; g.add(wm);
+      const bw = it.bench ?? 0.6;
+      if (bw && it.rack) {
+        // вместо скамьи — высокий стеллаж от западной стены до стекла: белые полки-трапеции, левая боковина у стены,
+        // правая из дубовых реек вдоль диагонали стекла (как на референсе); сверху вниз: растения, баночки,
+        // свёрнутые полотенца, стопка и корзина
+        const gf = it.glassFrom ?? 0.8, gt = it.glassTo ?? 1.45, rd = 0.35, rz = -hd + rd / 2, H = 2.0;
+        const xr = z => -hw + gf + ((z + hd) / D) * (gt - gf);         // x стекла на глубине z
+        const x0 = -hw, xb = xr(-hd), xf = xr(-hd + rd), cx = x0 + (xb + xf) / 4 + 0.02;
+        const white = M.matte('#f4f2ee'), oak = M.wood('#c9a272');
+        const ys = [0.06, 0.37, 0.65, 0.92, 1.19, 1.46, 1.72, H];
+        const slat = (x, z, ry, collide) => { const m = rbox(g, 0.025, H, 0.03, oak, x, H / 2, z, collide); m.rotation.y = ry; };
+        const ang = -Math.atan2(D, gt - gf) + Math.PI / 2;                // рейки вдоль стекла
+        for (let k = 0; k < 6; k++) {
+          const z = -hd + 0.02 + k * ((rd - 0.04) / 5);
+          slat(x0 + 0.0125, z, 0, k === 0 || k === 5);
+          slat(xr(z) - 0.02, z, ang, false);
+        }
+        const shape = new THREE.Shape([[x0 + 0.025, -hd], [xb - 0.03, -hd], [xf - 0.03, -hd + rd], [x0 + 0.025, -hd + rd]].map(([x, z]) => new THREE.Vector2(x, z)));
+        ys.forEach((y, l) => {
+          const m = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false }), white);
+          m.rotation.x = Math.PI / 2; m.position.y = y + 0.015; m.castShadow = m.receiveShadow = true;
+          if (l === 0) m.userData.collide = true;
+          g.add(m);
+        });
+        const roll = (x, y, r, c) => { const m = cyl(g, r, r, 0.24, M.fabric(c), x, y, rz, 20); m.rotation.x = Math.PI / 2; };
+        const fold = (x, y, c, n) => { for (let i = 0; i < n; i++) rbox(g, 0.4, 0.045, 0.28, M.fabric(c), x, y + 0.0225 + i * 0.047, rz); };
+        const jar = (x, y, r, h, c) => cyl(g, r, r, h, M.gloss(c), x, y + h / 2, rz, 14);
+        for (const [dx, c] of [[-0.2, '#e8e2d6'], [0.2, '#d9d2c6']]) {            // 1.72: растения
+          cyl(g, 0.055, 0.045, 0.1, M.matte(c), cx + dx, 1.735 + 0.05, rz, 14);
+          const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 1), M.leaf); b.position.set(cx + dx, 1.735 + 0.16, rz); g.add(b);
+        }
+        jar(cx - 0.24, 1.475, 0.055, 0.14, '#e8f0f0'); jar(cx, 1.475, 0.04, 0.2, '#e8e2d6'); jar(cx + 0.22, 1.475, 0.05, 0.1, '#d9d2c6');   // 1.46
+        jar(cx - 0.22, 1.205, 0.04, 0.1, '#e8f0f0'); jar(cx - 0.02, 1.205, 0.04, 0.12, '#d9cbb4'); jar(cx + 0.2, 1.205, 0.03, 0.08, '#e8e2d6'); // 1.19
+        roll(cx - 0.17, 0.945 + 0.07, 0.07, '#efe9df'); roll(cx, 0.945 + 0.07, 0.07, '#e4ddd0'); roll(cx + 0.17, 0.945 + 0.07, 0.07, '#efe9df'); // 0.92
+        fold(cx, 0.665, '#6e6e70', 3); fold(cx, 0.665 + 0.14, '#555558', 1);       // 0.65
+        rbox(g, 0.5, 0.14, 0.28, M.matte('#b9a98f'), cx, 0.385 + 0.07, rz);         // 0.37: корзина
+        roll(cx - 0.12, 0.385 + 0.18, 0.05, '#efe9df'); roll(cx + 0.1, 0.385 + 0.18, 0.05, '#c9b49a');
+        fold(cx, 0.075, '#d9d2c6', 3);                                              // 0.06
+      } else if (bw) {
+        rbox(g, bw, 0.4, 0.38, M.matte(it.benchColor ?? '#b0683f'), -hw + bw / 2, 0.2, -hd + 0.19, true);
+        rbox(g, bw + 0.02, 0.04, 0.4, M.wood('#a27a52'), -hw + bw / 2 + 0.01, 0.42, -hd + 0.2);
+      }
+      // стекло: от стены (x0) к краю зоны (x1)
+      const x0 = -hw + (it.glassFrom ?? 0.8), x1 = -hw + (it.glassTo ?? 1.45);
+      const gl = Math.hypot(x1 - x0, D), ga = -Math.atan2(D, x1 - x0), gx = (x0 + x1) / 2;
+      rbox(g, gl, 2.0, 0.01, M.glass, gx, 1.02, 0, true).rotation.y = ga;
+      for (const y of [0.02, 2.02]) rbox(g, gl, 0.025, 0.025, met, gx, y, 0).rotation.y = ga;
+      const rx = (x1 + hw) / 2 + 0.1;
+      cyl(g, 0.012, 0.012, 0.35, met, rx, 2.1, -hd + 0.18, 8).rotation.x = Math.PI / 2;
+      cyl(g, 0.15, 0.15, 0.015, met, rx, 2.08, -hd + 0.35, 28);
+      cyl(g, 0.01, 0.01, 0.9, met, hw - 0.03, 1.3, -hd + 0.25, 8);                    // штанга лейки на боковой стене
+      cyl(g, 0.03, 0.025, 0.2, met, hw - 0.05, 1.55, -hd + 0.25, 12);
+      rbox(g, hw - gxAt(zd) - 0.1, 0.004, 0.06, M.iron, (gxAt(zd) + hw) / 2, 0.006, zd).castShadow = false; // линейный трап
+      break;
+    }
     case 'toilet': {
       rbox(g, 0.36, 0.8, 0.12, M.gloss(col), 0, 0.8, -hd + 0.06);          // инсталляция / бачок
       const bowl = cyl(g, 0.17, 0.12, 0.4, M.gloss(col), 0, 0.2, 0.05, 24);
@@ -714,9 +803,9 @@ export function buildFurniture(it, M) {
     }
     case 'sink': {
       rbox(g, W, 0.5, D - 0.02, M.wood(col === T.fill ? '#8a6a4f' : col), 0, 0.55, -0.01, true);
-      const bw = Math.min(0.5, W * 0.62), bd = Math.min(0.3, D - 0.2), bz = 0.03;
+      const bw = Math.min(0.5, W * 0.62), bd = Math.min(0.3, D - 0.08), bz = 0.03;
       counterTop(g, M, -hw, hw, -hd, hd, [{ x: 0, z: bz, w: bw, d: bd }], 0.86, 0.12, M.gloss('#f3f3f1'));
-      sinkBowl(g, M, 0, bz, bw, bd, -hd + 0.05, 1, { top: 0.92, depth: 0.12, mat: M.gloss('#f3f3f1') });
+      sinkBowl(g, M, 0, bz, bw, bd, -hd + 0.05, 1, { top: 0.92, depth: 0.12, mat: M.gloss('#f3f3f1'), small: true, metal: it.metal === 'brass' ? M.brass : M.chrome });
       rbox(g, Math.min(0.8, W), 0.8, 0.02, M.gloss('#cfdde2'), 0, 1.55, -hd + 0.01);    // зеркало
       break;
     }
@@ -729,8 +818,9 @@ export function buildFurniture(it, M) {
       break;
     }
     case 'towel': {
-      for (const x of [-hw + 0.02, hw - 0.02]) cyl(g, 0.014, 0.014, 0.8, M.chrome, x, 1.1, 0, 8);
-      for (let i = 0; i < 6; i++) { const r = cyl(g, 0.01, 0.01, W - 0.04, M.chrome, 0, 0.75 + i * 0.14, 0, 8); r.rotation.z = Math.PI / 2; }
+      const tm = it.metal === 'brass' ? M.brass : M.chrome;
+      for (const x of [-hw + 0.02, hw - 0.02]) cyl(g, 0.014, 0.014, 0.8, tm, x, 1.1, 0, 8);
+      for (let i = 0; i < 6; i++) { const r = cyl(g, 0.01, 0.01, W - 0.04, tm, 0, 0.75 + i * 0.14, 0, 8); r.rotation.z = Math.PI / 2; }
       break;
     }
     case 'desk': {
