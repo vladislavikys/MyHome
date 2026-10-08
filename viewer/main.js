@@ -9,6 +9,7 @@ import { createWalk } from './walk.js';
 import { createTour } from './tour.js';
 import { applyVariant, captureVariant, tourPoints } from './variants.js';
 import { createCompare } from './compare.js';
+import { createStickers } from './stickers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -1276,6 +1277,7 @@ function build(house) {
     if (o.userData.walkable) walkables.push(o);
   });
   applyVisibility();
+  stickers?.sync();
 }
 
 function applyVisibility() {
@@ -1359,6 +1361,37 @@ walkUi.exitWalk.onclick = () => {
   view('3d');
 };
 
+// Первая видимая поверхность под лучом (точка и нормаль к зрителю) — куда клеить стикер.
+function pickSurface(ray) {
+  for (const hit of ray.intersectObjects(scene.children, true)) {
+    if (!hit.object.isMesh || !hit.face || hit.object.parent === stickers?.group || hit.object.userData.grass) continue;
+    let visible = true;
+    for (let q = hit.object; q; q = q.parent) if (!q.visible) visible = false;
+    if (!visible) continue;
+    const planes = hit.object.material?.clippingPlanes;
+    if (planes?.some(pl => pl.distanceToPoint(hit.point) < 0)) continue;
+    const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+    if (n.dot(ray.ray.direction) > 0) n.negate();
+    return { point: hit.point, normal: n };
+  }
+  return null;
+}
+
+// Стикеры-заметки (stickers.js): кнопка «Стикер» → клик по поверхности; в прогулке N — клеить, E — изменить, Delete — удалить.
+let stickers = createStickers({
+  scene, camera,
+  notes: create => (create ? (house.notes ??= []) : (house?.notes ?? [])),
+  onChange: () => scheduleSave(),
+});
+let placingSticker = false;
+const stickerBtn = document.getElementById('sticker-add');
+stickerBtn.onclick = () => {
+  placingSticker = !placingSticker;
+  stickerBtn.classList.toggle('active', placingSticker);
+  document.body.classList.toggle('placing-sticker', placingSticker);
+};
+document.getElementById('stickers').onchange = ev => stickers.setVisible(ev.target.checked);
+
 // Нажатие на окно в 3D открывает его в редакторе.
 const picker = new THREE.Raycaster();
 let downAt = null;
@@ -1367,6 +1400,14 @@ renderer.domElement.addEventListener('pointerup', ev => {
   if (walk.active || !downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
   const r = renderer.domElement.getBoundingClientRect();
   picker.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
+  if (placingSticker) {
+    const s = pickSurface(picker);
+    if (s) stickers.add(s.point, s.normal);
+    stickerBtn.click();
+    return;
+  }
+  const note = stickers.hit(picker);
+  if (note) { stickers.open(note); return; }
   for (const hit of picker.intersectObjects(scene.children, true)) {
     let o = hit.object, visible = true;
     for (let q = o; q; q = q.parent) if (!q.visible) visible = false;
@@ -1907,7 +1948,16 @@ function toggleNearestDoor() {
   return !!best;
 }
 window.addEventListener('keydown', ev => {
-  if (walk.active && ev.code === 'KeyE' && !ev.target.closest?.('input, select, textarea')) toggleNearestDoor();
+  if (!walk.active || ev.target.closest?.('input, select, textarea')) return;
+  if (ev.code === 'KeyE') { if (stickers.focused) walk.hold(() => stickers.edit()); else toggleNearestDoor(); }
+  else if (ev.code === 'Delete' && stickers.focused) walk.hold(() => stickers.remove());
+  else if (ev.code === 'KeyN') {
+    picker.setFromCamera(new THREE.Vector2(0, 0), camera);
+    picker.far = 4;
+    const s = pickSurface(picker);
+    picker.far = Infinity;
+    if (s) walk.hold(() => stickers.add(s.point, s.normal));
+  }
 });
 document.getElementById('door-toggle').onclick = () => toggleNearestDoor();
 
@@ -1919,6 +1969,7 @@ renderer.setAnimationLoop(() => {
   animateDoors(dt);
   animateFlicker(clock.elapsedTime);
   if (skyNight.visible) skyNight.position.copy(camera.position);
+  stickers.update();
   if (photo.active) { photo.update(); return; }
   if (tour.active) tour.update();
   else if (walk.active) walk.update(dt);

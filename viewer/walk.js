@@ -136,8 +136,14 @@ export function createWalk({ camera, dom, ui, getColliders, getWalkables }) {
     pitch = Math.max(-1.45, Math.min(1.45, pitch - ev.movementY * 0.0025));
   });
   // Esc в захвате курсора браузер не отдаёт странице — выходим, когда захват снят
+  // hold — курсор отпущен ненадолго (ввод текста стикера): прогулка не закрывается, захват вернёт клик по сцене
+  let holding = false;
   document.addEventListener('pointerlockchange', () => {
-    if (active && document.pointerLockElement !== dom) ui.exitWalk.click();
+    if (document.pointerLockElement === dom) holding = false;
+    else if (active && !holding) ui.exitWalk.click();
+  });
+  dom.addEventListener('click', () => {
+    if (active && document.pointerLockElement !== dom && matchMedia('(pointer: fine)').matches) dom.requestPointerLock?.()?.catch?.(() => {});
   });
 
   // осмотр пальцем (или мышью без захвата): тянуть по сцене
@@ -194,5 +200,14 @@ export function createWalk({ camera, dom, ui, getColliders, getWalkables }) {
     apply();
   }
 
-  return { enter, exit, update, teleport, get feet() { return feet.clone(); }, get active() { return active; } };
+  // выполнить fn с отпущенным курсором (prompt/confirm), не выходя из прогулки
+  function hold(fn) {
+    keys.clear();
+    if (document.pointerLockElement !== dom) return fn();
+    holding = true;
+    document.exitPointerLock();
+    return fn();
+  }
+
+  return { enter, exit, update, teleport, hold, get feet() { return feet.clone(); }, get active() { return active; } };
 }

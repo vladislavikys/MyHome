@@ -300,6 +300,25 @@
     .cmp-line:focus-visible span { outline: 2px solid var(--accent); outline-offset: 2px; }
     .cmp-tag { position: absolute; bottom: 16px; max-width: 40%; padding: 4px 10px; border-radius: 6px; background: rgb(0 0 0 / 0.6); color: #fff; font-weight: 500; font-size: 13px; pointer-events: none; }
     .cmp-tag-a { left: 16px; } .cmp-tag-b { right: 16px; }
+    /* стикеры-заметки (stickers.js) */
+    .note-card { position: fixed; left: 50%; top: 50%; z-index: 20; width: min(340px, calc(100vw - 32px)); padding: 20px 20px 12px; background: #ffe066; color: #3a3000;
+      border-radius: 2px; box-shadow: 0 12px 32px rgb(0 0 0 / 0.35); transform: translate(-50%, -50%) scale(0.6) rotate(-2deg); opacity: 0;
+      transition: transform 180ms cubic-bezier(.2, .9, .3, 1.2), opacity 120ms ease-out; pointer-events: none; }
+    .note-card.open { transform: translate(-50%, -50%) scale(1) rotate(-1deg); opacity: 1; }
+    .note-card[hidden] { display: none; }
+    .note-card.pinned { pointer-events: auto; }
+    .note-text { margin: 0 0 12px; font: 600 18px/1.4 "Segoe Print", "Comic Sans MS", sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .note-actions { display: none; gap: 8px; }
+    .note-card.pinned .note-actions { display: flex; }
+    .note-actions button { background: rgb(255 255 255 / 0.55); color: #3a3000; border: 1px solid rgb(58 48 0 / 0.25); }
+    .note-close { margin-left: auto; }
+    .note-keys { margin: 0; font-size: 12px; opacity: 0.7; }
+    body:not(.walking) .note-keys { display: none; }
+    @media (prefers-reduced-motion: reduce) { .note-card { transition: none; } }
+    body.placing-sticker #app canvas { cursor: crosshair; }
+    #sticker-add.active { background: var(--accent); color: var(--accent-ink); }
+    body.walking #app::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+      background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5); pointer-events: none; z-index: 4; }
   </style>
   <script type="importmap">
   {
@@ -320,6 +339,7 @@
       <div class="row">
         <label><input type="checkbox" id="roof" checked> Крыша</label>
         <label><input type="checkbox" id="labels" checked> Подписи</label>
+        <label><input type="checkbox" id="stickers" checked> Стикеры</label>
         <label>Этажи: <select id="floors"></select></label>
       </div>
       <div class="row" id="variants"></div>
@@ -337,6 +357,7 @@
         <button type="button" id="reset">3D вид</button>
         <button type="button" id="street">С улицы</button>
         <button type="button" id="photo" title="Фотореалистичный кадр с текущего ракурса">Фото</button>
+        <button type="button" id="sticker-add" title="Наклеить стикер-заметку: нажмите, затем кликните по поверхности">Стикер</button>
         <button type="button" id="tour">Экскурсия</button>
         <button type="button" id="walk">Прогулка</button>
         <button type="button" id="edit" aria-pressed="false">Редактировать план</button>
@@ -345,7 +366,7 @@
     </div>
     <div id="walkbar" role="toolbar" aria-label="Прогулка">
       <label><input type="checkbox" id="noclip"> Сквозь стены (полёт)</label>
-      <span class="walk-hint walk-hint-keys">WASD — идти · мышь — смотреть · E — открыть/закрыть дверь или вытяжку · Shift — быстрее · Space / C — вверх / вниз в полёте · Esc / Backspace — выход</span>
+      <span class="walk-hint walk-hint-keys">WASD — идти · мышь — смотреть · E — открыть/закрыть дверь или вытяжку · Shift — быстрее · Space / C — вверх / вниз в полёте · N — наклеить стикер · Esc / Backspace — выход</span>
       <button type="button" id="door-toggle">Открыть / закрыть</button>
       <span class="walk-hint walk-hint-touch">Джойстик — идти · свайп по экрану — смотреть</span>
       <button type="button" id="exit-walk">Выйти</button>
